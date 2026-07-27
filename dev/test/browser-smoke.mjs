@@ -99,6 +99,12 @@ try {
       return samples.size > 8
     })
   assert.equal(canvasHasArtwork, true)
+  if (process.env.WORMBITS_SCREENSHOT_PATH) {
+    await page.screenshot({
+      path: process.env.WORMBITS_SCREENSHOT_PATH,
+      fullPage: true
+    })
+  }
 
   await page.keyboard.down('Space')
   await page.waitForTimeout(350)
@@ -121,12 +127,6 @@ try {
   await page.waitForFunction(
     () => window.wormbitsDebug?.getState().turnNumber === 3
   )
-  if (process.env.WORMBITS_SCREENSHOT_PATH) {
-    await page.screenshot({
-      path: process.env.WORMBITS_SCREENSHOT_PATH,
-      fullPage: true
-    })
-  }
   assert.deepEqual(errors, [])
 } finally {
   await browser.close()

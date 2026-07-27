@@ -484,7 +484,7 @@ function updateInterface() {
   }
 
   turnTimer.textContent = simulation.turnTime.toFixed(1)
-  turnMeterFill.style.transform = `scaleX(${clamp(
+  turnMeterFill.style.transform = `scaleX(${clampUi(
     simulation.turnTime / simulation.turnDuration,
     0,
     1
@@ -530,7 +530,7 @@ function render() {
   const cameraCenter =
     visibleWorldWidth >= WORLD_WIDTH
       ? WORLD_WIDTH / 2
-      : clamp(
+      : clampUi(
           camera.x,
           visibleWorldWidth / 2,
           WORLD_WIDTH - visibleWorldWidth / 2
@@ -707,12 +707,16 @@ function drawUnit(unit) {
   const team = TEAM_DEFINITIONS[unit.team]
   const active =
     unit.id === simulation.activeUnitId && simulation.phase !== 'finished'
+  const bob =
+    active && simulation.phase === 'turn'
+      ? Math.sin(performance.now() * 0.005) * 0.7
+      : 0
   context.save()
-  context.translate(unit.x, unit.y)
+  context.translate(unit.x, unit.y + bob)
 
   context.fillStyle = 'rgba(0,0,0,0.25)'
   context.beginPath()
-  context.ellipse(0, unit.radius + 8, 21, 6, 0, 0, Math.PI * 2)
+  context.ellipse(-2, unit.radius + 8, 24, 6, 0, 0, Math.PI * 2)
   context.fill()
 
   if (active) {
@@ -720,88 +724,234 @@ function drawUnit(unit) {
     context.lineWidth = 3
     context.globalAlpha = 0.36 + Math.sin(performance.now() * 0.006) * 0.12
     context.beginPath()
-    context.arc(0, 0, unit.radius + 8, 0, Math.PI * 2)
+    context.ellipse(0, -2, 28, 32, 0, 0, Math.PI * 2)
     context.stroke()
     context.globalAlpha = 1
   }
 
-  const bodyGradient = context.createRadialGradient(-6, -8, 2, 0, 0, 23)
-  bodyGradient.addColorStop(0, team.accent)
-  bodyGradient.addColorStop(0.35, team.color)
-  bodyGradient.addColorStop(1, unit.team === 0 ? '#8b0a7c' : '#087f96')
-  context.fillStyle = bodyGradient
-  context.beginPath()
-  context.arc(0, 0, unit.radius, 0, Math.PI * 2)
-  context.fill()
-  context.strokeStyle = 'rgba(255,255,255,0.52)'
-  context.lineWidth = 1.5
-  context.stroke()
+  if (active && simulation.phase === 'turn') drawWormAim(unit, team)
 
-  const faceX = unit.facing * 4
-  context.fillStyle = '#17131c'
-  context.beginPath()
-  context.roundRect(faceX - 8, -8, 15, 11, 5)
-  context.fill()
-  context.fillStyle = '#ffffff'
-  context.beginPath()
-  context.arc(faceX - 3, -4, 1.6, 0, Math.PI * 2)
-  context.arc(faceX + 3, -4, 1.6, 0, Math.PI * 2)
-  context.fill()
+  context.save()
+  context.scale(unit.facing, 1)
+  drawWormBody(team)
+  drawWormHeadband(team)
+  drawWormBadge(team)
+  if (active && simulation.phase === 'turn') drawWormWeapon(unit, team)
+  drawWormFace(active)
+  context.restore()
 
-  context.fillStyle = '#17131c'
-  context.beginPath()
-  context.moveTo(-3, 3)
-  context.lineTo(3, 3)
-  context.lineTo(0, 8)
-  context.lineTo(5, 8)
-  context.lineTo(-2, 14)
-  context.lineTo(0, 9)
-  context.lineTo(-5, 9)
-  context.closePath()
-  context.fill()
-
-  context.strokeStyle = '#151219'
-  context.lineWidth = 3
-  context.lineCap = 'round'
-  context.beginPath()
-  context.moveTo(-8, 13)
-  context.lineTo(-12, 20)
-  context.moveTo(8, 13)
-  context.lineTo(12, 20)
-  context.stroke()
-
-  if (active && simulation.phase === 'turn') {
-    const angle = (unit.aim * Math.PI) / 180
-    const aimLength = 62
-    const endX = Math.cos(angle) * unit.facing * aimLength
-    const endY = Math.sin(angle) * aimLength
-    context.strokeStyle = '#ffe45c'
-    context.lineWidth = 2
-    context.setLineDash([5, 5])
-    context.beginPath()
-    context.moveTo(Math.cos(angle) * unit.facing * 23, Math.sin(angle) * 23)
-    context.lineTo(endX, endY)
-    context.stroke()
-    context.setLineDash([])
-
+  if (active) {
     context.fillStyle = team.color
     context.beginPath()
-    context.moveTo(0, -36)
-    context.lineTo(-7, -47)
-    context.lineTo(7, -47)
+    context.moveTo(0, -45)
+    context.lineTo(-7, -55)
+    context.lineTo(7, -55)
     context.closePath()
     context.fill()
   }
 
-  context.font = '700 11px system-ui, sans-serif'
+  context.font = '800 11px system-ui, sans-serif'
   context.textAlign = 'center'
   context.fillStyle = '#ffffff'
-  context.fillText(unit.name, 0, -28)
-  context.fillStyle = 'rgba(17,14,20,0.78)'
-  context.fillRect(-21, -23, 42, 4)
+  context.fillText(unit.name, 0, -38)
+  context.fillStyle = 'rgba(17,14,20,0.82)'
+  context.fillRect(-22, -33, 44, 5)
   context.fillStyle =
     unit.health > 50 ? '#74ff83' : unit.health > 25 ? '#ffe45c' : '#ff5d73'
-  context.fillRect(-21, -23, 42 * (unit.health / 100), 4)
+  context.fillRect(-22, -33, 44 * (unit.health / 100), 5)
+  context.restore()
+}
+
+function drawWormBody(team) {
+  const bodyGradient = context.createLinearGradient(-17, -24, 17, 18)
+  bodyGradient.addColorStop(0, '#ffe0c9')
+  bodyGradient.addColorStop(0.38, '#f7a08e')
+  bodyGradient.addColorStop(0.78, '#e46f73')
+  bodyGradient.addColorStop(1, '#a93f5c')
+  context.fillStyle = bodyGradient
+  context.beginPath()
+  context.moveTo(-15, 17)
+  context.bezierCurveTo(-21, 13, -19, 6, -11, 2)
+  context.bezierCurveTo(-8, 0, -10, -8, -7, -15)
+  context.bezierCurveTo(-4, -23, 5, -27, 14, -23)
+  context.bezierCurveTo(22, -19, 25, -10, 22, -2)
+  context.bezierCurveTo(20, 5, 15, 9, 10, 11)
+  context.bezierCurveTo(8, 15, 3, 18, -4, 19)
+  context.bezierCurveTo(-9, 20, -13, 19, -15, 17)
+  context.closePath()
+  context.fill()
+  context.strokeStyle = '#6e3148'
+  context.lineWidth = 2
+  context.stroke()
+
+  context.strokeStyle = 'rgba(255, 230, 215, 0.65)'
+  context.lineWidth = 1.4
+  context.beginPath()
+  context.moveTo(-10, 12)
+  context.bezierCurveTo(-3, 16, 4, 15, 8, 11)
+  context.stroke()
+
+  context.fillStyle = team.color
+  context.beginPath()
+  context.ellipse(-11, 15, 5, 2.7, -0.2, 0, Math.PI * 2)
+  context.fill()
+}
+
+function drawWormHeadband(team) {
+  context.fillStyle = team.color
+  context.beginPath()
+  context.moveTo(-5, -18)
+  context.bezierCurveTo(2, -20, 11, -20, 19, -15)
+  context.lineTo(20, -10)
+  context.bezierCurveTo(10, -15, 2, -15, -6, -13)
+  context.closePath()
+  context.fill()
+
+  context.fillStyle = team.accent
+  context.beginPath()
+  context.ellipse(18, -13, 2.3, 2.8, 0, 0, Math.PI * 2)
+  context.fill()
+
+  context.fillStyle = team.color
+  context.beginPath()
+  context.moveTo(-5, -16)
+  context.bezierCurveTo(-13, -20, -18, -19, -23, -15)
+  context.bezierCurveTo(-17, -14, -13, -11, -8, -8)
+  context.closePath()
+  context.fill()
+  context.beginPath()
+  context.moveTo(-6, -15)
+  context.bezierCurveTo(-14, -13, -18, -9, -20, -4)
+  context.bezierCurveTo(-14, -7, -10, -7, -6, -9)
+  context.closePath()
+  context.fill()
+}
+
+function drawWormBadge(team) {
+  context.fillStyle = '#28212d'
+  context.beginPath()
+  context.arc(-2, 6, 6, 0, Math.PI * 2)
+  context.fill()
+  context.fillStyle = team.color
+  context.beginPath()
+  context.moveTo(-2, 1)
+  context.lineTo(-6, 7)
+  context.lineTo(-2, 7)
+  context.lineTo(-4, 12)
+  context.lineTo(3, 5)
+  context.lineTo(0, 5)
+  context.lineTo(3, 1)
+  context.closePath()
+  context.fill()
+}
+
+function drawWormFace(active) {
+  context.fillStyle = '#ffffff'
+  context.strokeStyle = '#6e3148'
+  context.lineWidth = 1
+  context.beginPath()
+  context.ellipse(7, -10, 5, 7, -0.08, 0, Math.PI * 2)
+  context.ellipse(15, -9, 4.5, 6.5, 0.08, 0, Math.PI * 2)
+  context.fill()
+  context.stroke()
+
+  context.fillStyle = '#221923'
+  context.beginPath()
+  context.arc(9, -9, 1.8, 0, Math.PI * 2)
+  context.arc(17, -8, 1.8, 0, Math.PI * 2)
+  context.fill()
+
+  context.strokeStyle = '#653044'
+  context.lineWidth = 1.7
+  context.lineCap = 'round'
+  context.beginPath()
+  context.moveTo(5, -17)
+  context.lineTo(10, -16)
+  context.moveTo(13, -15)
+  context.lineTo(18, -14)
+  context.stroke()
+
+  context.fillStyle = '#c95869'
+  context.beginPath()
+  context.ellipse(22, -3, 3.5, 2.7, 0, 0, Math.PI * 2)
+  context.fill()
+  context.strokeStyle = '#6e3148'
+  context.lineWidth = 1
+  context.stroke()
+
+  context.strokeStyle = '#5f2940'
+  context.lineWidth = 2
+  context.beginPath()
+  if (active) {
+    context.arc(14, 0, 5, 0.18, Math.PI - 0.1)
+  } else {
+    context.arc(14, -1, 4.5, 0.15, Math.PI - 0.05)
+  }
+  context.stroke()
+}
+
+function drawWormAim(unit, team) {
+  const angle = (unit.aim * Math.PI) / 180
+  const aimLength = 68
+  const directionX = Math.cos(angle) * unit.facing
+  const directionY = Math.sin(angle)
+  context.strokeStyle = '#ffe45c'
+  context.lineWidth = 2
+  context.setLineDash([5, 5])
+  context.beginPath()
+  context.moveTo(directionX * 27, directionY * 27)
+  context.lineTo(directionX * aimLength, directionY * aimLength)
+  context.stroke()
+  context.setLineDash([])
+
+  context.fillStyle = team.color
+  context.beginPath()
+  context.arc(directionX * aimLength, directionY * aimLength, 3, 0, Math.PI * 2)
+  context.fill()
+}
+
+function drawWormWeapon(unit, team) {
+  const angle = (unit.aim * Math.PI) / 180
+  context.save()
+  context.translate(6, 0)
+  context.rotate(angle)
+
+  context.strokeStyle = '#f19a87'
+  context.lineWidth = 7
+  context.lineCap = 'round'
+  context.beginPath()
+  context.moveTo(0, 0)
+  context.lineTo(13, 0)
+  context.stroke()
+
+  if (simulation.selectedWeapon === 'grenade') {
+    context.shadowColor = team.color
+    context.shadowBlur = 8
+    context.fillStyle = team.color
+    context.beginPath()
+    context.arc(18, 0, 6, 0, Math.PI * 2)
+    context.fill()
+    context.fillStyle = '#26202b'
+    context.beginPath()
+    context.moveTo(17, -4)
+    context.lineTo(20, -4)
+    context.lineTo(18, 0)
+    context.lineTo(21, 0)
+    context.lineTo(16, 5)
+    context.lineTo(17, 1)
+    context.lineTo(14, 1)
+    context.closePath()
+    context.fill()
+  } else {
+    context.fillStyle = '#302936'
+    context.beginPath()
+    context.roundRect(10, -5, 23, 10, 4)
+    context.fill()
+    context.fillStyle = team.color
+    context.fillRect(15, -4, 11, 8)
+    context.fillStyle = '#17131c'
+    context.fillRect(29, -6, 6, 12)
+  }
   context.restore()
 }
 
@@ -845,7 +995,7 @@ function drawProjectile(projectile) {
 }
 
 function drawEffect(effect) {
-  const progress = clamp(effect.age / effect.duration, 0, 1)
+  const progress = clampUi(effect.age / effect.duration, 0, 1)
   context.save()
   if (effect.type === 'explosion') {
     const radius = effect.radius * (0.35 + progress * 0.95)
@@ -972,7 +1122,7 @@ function isGameKey(key) {
   ].includes(key)
 }
 
-function clamp(value, minimum, maximum) {
+function clampUi(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value))
 }
 
