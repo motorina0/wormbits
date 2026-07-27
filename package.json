@@ -1,0 +1,12 @@
+{
+  "name": "lnbits-wormbits",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:browser": "node dev/build_browser.mjs",
+    "check": "node --check static/simulation.js && node --check static/game.js && node --check static/game.bundle.js && node --check dev/test/browser-smoke.mjs",
+    "test:unit": "node --test dev/test/simulation.test.mjs",
+    "test:browser": "node dev/test/browser-smoke.mjs",
+    "test": "npm run build:browser && npm run check && npm run test:unit && npm run test:browser"
+  }
+}
