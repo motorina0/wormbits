@@ -1,0 +1,185 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+    paths:
+      - config.json
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate extension metadata
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          config = json.loads(Path("config.json").read_text())
+          version = config.get("version", "")
+
+          assert config.get("id") == "wormbits", "config id must be wormbits"
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version), (
+              "config version must use X.Y.Z format"
+          )
+          assert config.get("extension_type") == "wasm", (
+              "extension_type must be wasm"
+          )
+
+          if os.environ["REF_TYPE"] == "tag":
+              assert os.environ["REF_NAME"] == f"v{version}", (
+                  "tag must match config version"
+              )
+
+          module = config.get("wasm", {}).get("module")
+          assert module, "wasm.module is required"
+          with open(module, "rb") as module_file:
+              assert module_file.read(4) == b"\0asm", (
+                  "wasm.module is not WASM"
+              )
+          PY
+
+      - name: Check source and unit tests
+        run: |
+          npm run build:browser
+          npm run check
+          npm run test:unit
+
+      - name: Build WASM
+        run: npm run build:wasm
+
+      - name: Validate generated artifacts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          module = Path("wasm/module.wasm")
+          assert module.is_file(), "wasm.module file is missing"
+          with module.open("rb") as module_file:
+              assert module_file.read(4) == b"\0asm", (
+                  "wasm.module is not WASM"
+              )
+          PY
+
+          git diff --exit-code -- static/game.bundle.js wasm/module.wasm
+
+  prepare:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release tag
+        id: release
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          VERSION=$(jq -r '.version // empty' config.json)
+          TAG="v$VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if [ "$REF_TYPE" = "tag" ]; then
+            if [ "$REF_NAME" != "$TAG" ]; then
+              echo "Tag $REF_NAME does not match config.json version $VERSION"
+              exit 1
+            fi
+          else
+            PREVIOUS_VERSION=$(git show "$BEFORE_SHA:config.json" | jq -r '.version // empty')
+            if [ "$PREVIOUS_VERSION" = "$VERSION" ]; then
+              echo "config.json version did not change; nothing to publish"
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          if [ "$REF_TYPE" != "tag" ]; then
+            if git show-ref --verify --quiet "refs/tags/$TAG"; then
+              echo "Tag $TAG already exists; nothing to publish"
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" || \
+            gh release create "$TAG" --generate-notes --repo "$GITHUB_REPOSITORY"
+
+  update-manifest:
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.EXT_GITHUB }}
+          repository: lnbits/lnbits-extensions-wasm
+          path: lnbits-extensions-wasm
+
+      - name: Set up Git user
+        working-directory: lnbits-extensions-wasm
+        run: |
+          git config user.name "alan"
+          git config user.email "alan@lnbits.com"
+
+      - name: Update manifest and create pull request
+        working-directory: lnbits-extensions-wasm
+        env:
+          GH_TOKEN: ${{ secrets.EXT_GITHUB }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          BRANCH: update-${{ github.event.repository.name }}-${{ needs.prepare.outputs.tag }}
+          TITLE: '[UPDATE] ${{ github.event.repository.name }} to ${{ needs.prepare.outputs.tag }}'
+          BODY: https://github.com/lnbits/${{ github.event.repository.name }}/releases/${{ needs.prepare.outputs.tag }}
+        run: |
+          git checkout -b "$BRANCH"
+          git pull origin "$BRANCH" || echo "Branch does not exist yet"
+
+          sh util.sh update_extension "$REPO_NAME" "$TAG"
+
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "$TITLE"
+            git push --set-upstream origin "$BRANCH"
+          fi
+
+          if [ "$(gh pr list --head "$BRANCH" --json number --jq length)" -eq 0 ]; then
+            gh pr create --title "$TITLE" --body "$BODY" --head "$BRANCH"
+          fi
