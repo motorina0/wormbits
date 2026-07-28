@@ -1,8 +1,8 @@
 {
   "id": "wormbits",
   "name": "Worm Bits",
-  "short_description": "Reliable 2–4 player LNbits artillery with destructible terrain.",
-  "version": "0.3.0",
+  "short_description": "Competitive 2–4 player LNbits artillery with optional Lightning entry fees.",
+  "version": "0.4.0",
   "min_lnbits_version": "1.5.6",
   "tile": "/ext-assets/wormbits/assets/icon.png",
   "tags": ["gaming", "artillery", "multiplayer", "wasm"],
@@ -11,6 +11,7 @@
     "module": "wasm/module.wasm",
     "world": "wormbits",
     "exports": [
+      {"name": "list-wormbits-wallets", "visibility": "authenticated"},
       {"name": "create-wormbits-room", "visibility": "authenticated"},
       {"name": "get-wormbits-room", "visibility": "public"},
       {"name": "join-wormbits-room", "visibility": "public"},
@@ -19,8 +20,13 @@
       {"name": "start-wormbits-match", "visibility": "public"},
       {"name": "submit-wormbits-action", "visibility": "public"},
       {"name": "heartbeat-wormbits-room", "visibility": "public"},
-      {"name": "forfeit-wormbits-match", "visibility": "public"}
+      {"name": "forfeit-wormbits-match", "visibility": "public"},
+      {"name": "settle-wormbits-room", "visibility": "public"},
+      {"name": "record-wormbits-payment", "visibility": "event"}
     ]
+  },
+  "events": {
+    "onInvoicePaid": "record-wormbits-payment"
   },
   "ui_routes": [
     {
@@ -36,6 +42,12 @@
     }
   ],
   "api_routes": [
+    {
+      "method": "GET",
+      "path": "/wallets",
+      "export": "list-wormbits-wallets",
+      "auth": "user"
+    },
     {
       "method": "POST",
       "path": "/rooms",
@@ -129,16 +141,82 @@
         "table": "wormbits_rooms",
         "idParam": "roomId"
       }
+    },
+    {
+      "method": "POST",
+      "path": "/rooms/{room_id}/settle",
+      "export": "settle-wormbits-room",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
     }
   ],
   "permissions": [
     {
       "id": "ext.storage.read",
-      "description": "Read Worm Bits rooms, participants, actions, and durable snapshots."
+      "description": "Read Worm Bits rooms, participants, actions, payments, settlements, and durable snapshots."
+    },
+    {
+      "id": "ext.storage.read_public",
+      "description": "Read the public Worm Bits room fields needed for public lobbies and entry invoices.",
+      "policies": [
+        {
+          "table_name": "wormbits_rooms",
+          "public_fields": [
+            "id",
+            "name",
+            "seed",
+            "status",
+            "max_players",
+            "player_count",
+            "spectator_count",
+            "host_player_id",
+            "revision",
+            "action_count",
+            "winner_slot",
+            "wallet_id",
+            "wallet_name",
+            "entry_fee_sats",
+            "pot_sats",
+            "settlement_status",
+            "settlement_kind",
+            "created_at",
+            "updated_at",
+            "started_at",
+            "completed_at",
+            "settled_at"
+          ]
+        }
+      ]
     },
     {
       "id": "ext.storage.write",
-      "description": "Persist Worm Bits rooms, participants, actions, and durable snapshots."
+      "description": "Persist Worm Bits rooms, participants, actions, payments, settlements, and durable snapshots."
+    },
+    {
+      "id": "wallet.list",
+      "description": "Show the room creator their wallets for collecting entry fees."
+    },
+    {
+      "id": "wallet.create_invoice_public",
+      "description": "Create public Worm Bits entry invoices for the room wallet.",
+      "policies": [
+        {
+          "table": "wormbits_rooms",
+          "wallet_field": "wallet_id"
+        }
+      ]
+    },
+    {
+      "id": "wallet.pay_invoice",
+      "description": "Pay Worm Bits payouts and refunds from the room wallet."
+    },
+    {
+      "id": "wallet.pay_invoice_background",
+      "description": "Pay server-validated Worm Bits payouts and refunds after public matches."
     },
     {
       "id": "websocket.publish",

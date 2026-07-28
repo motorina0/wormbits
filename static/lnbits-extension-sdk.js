@@ -20,6 +20,14 @@
         })
       },
 
+      requestBackgroundPaymentPermission(grant, options = {}) {
+        return bridgeRequest({
+          action: 'permissions.request_background_payment',
+          grant,
+          forcePrompt: options.forcePrompt === true
+        })
+      },
+
       sessionGet(key) {
         return bridgeRequest({action: 'storage.session.get', key}).then(
           response => response?.value ?? null
@@ -32,6 +40,10 @@
           key,
           value
         })
+      },
+
+      listWallets() {
+        return request(`${baseUrl}/wallets`)
       },
 
       createRoom(payload) {
@@ -92,6 +104,13 @@
       forfeit(roomId, payload) {
         return request(
           `${baseUrl}/rooms/${encodeURIComponent(roomId)}/forfeit`,
+          {method: 'POST', body: payload}
+        )
+      },
+
+      settleRoom(roomId, payload) {
+        return request(
+          `${baseUrl}/rooms/${encodeURIComponent(roomId)}/settle`,
           {method: 'POST', body: payload}
         )
       },

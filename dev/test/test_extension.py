@@ -17,12 +17,18 @@ def test_multiplayer_manifest_exposes_scoped_routes_and_permissions() -> None:
     assert config.extension_type == "wasm"
     assert {permission.id for permission in config.permissions} == {
         "ext.storage.read",
+        "ext.storage.read_public",
         "ext.storage.write",
+        "wallet.list",
+        "wallet.create_invoice_public",
+        "wallet.pay_invoice",
+        "wallet.pay_invoice_background",
         "websocket.publish",
         "websocket.subscribe",
     }
-    assert len(config.api_routes) == 9
-    assert len(config.wasm.exports) == 9
+    assert len(config.api_routes) == 11
+    assert len(config.wasm.exports) == 12
+    assert config.events.on_invoice_paid == "record-wormbits-payment"
     assert config.wasm.world == "wormbits"
     assert config.ui_routes[0].path == "/wormbits"
     assert config.ui_routes[0].auth == "user"
@@ -47,3 +53,4 @@ def test_multiplayer_component_storage_and_ui_assets_are_valid() -> None:
     assert (EXTENSION_ROOT / "static" / "assets" / "icon.png").is_file()
     assert (EXTENSION_ROOT / "storage" / "schema.json").is_file()
     assert (EXTENSION_ROOT / "storage" / "migrations" / "0001_initial.json").is_file()
+    assert (EXTENSION_ROOT / "storage" / "migrations" / "0002_payments.json").is_file()

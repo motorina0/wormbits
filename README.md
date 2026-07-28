@@ -17,7 +17,10 @@ four players. The game includes:
 - durable deterministic snapshots and synchronization recovery;
 - reconnectable private player tokens kept out of invite URLs;
 - disconnect detection, timeout forfeits, and automatic host transfer;
-- read-only spectators and persistent action rate limiting; and
+- read-only spectators and persistent action rate limiting;
+- optional equal entry fees collected into the creator's LNbits wallet;
+- idempotent winner payouts, draw splits, pre-start refunds, and safe retry
+  handling; and
 - original Canvas artwork and generated sound effects.
 
 The game and physics are dependency-free JavaScript. The same deterministic
@@ -32,16 +35,29 @@ fallback provides recovery if a socket disconnects or an update is missed.
 
 ## Multiplayer flow
 
-1. An authenticated LNbits user creates a two-to-four-player room.
+1. An authenticated LNbits user creates a two-to-four-player room. Paid rooms
+   use one of that user's wallets as the pot wallet.
 2. The host shares the public room URL. The URL never contains the host token.
-3. Players join with a display name, ready up, and the host starts the match.
-4. Each player controls the team matching their lobby slot.
-5. Spectators receive the same snapshots but cannot submit game actions.
-6. Participants are shown offline after 15 seconds without a heartbeat.
-7. A player forfeits after 75 seconds offline. The next connected player becomes
+3. For paid rooms, every player supplies a payout Lightning address and pays
+   the same entry invoice before they can ready up.
+4. Players join with a display name, ready up, and the host starts the match.
+5. Each player controls the team matching their lobby slot.
+6. Spectators receive the same snapshots but cannot submit game actions.
+7. Participants are shown offline after 15 seconds without a heartbeat.
+8. A player forfeits after 75 seconds offline. The next connected player becomes
    host when the current host disconnects.
 
-There are no payments or wallet permissions.
+The backend derives the winner only from its deterministic durable simulation.
+The winning slot receives the pot; a draw returns an equal share to every paid
+entrant. A paid player who leaves before the match starts receives a refund.
+Settlement records are written before Lightning is called, so repeated requests
+do not repeat completed payments. Definite failures can be retried. Ambiguous
+interruptions and pending outgoing payments are held for manual review instead
+of being retried blindly.
+
+Paid rooms are custodial rather than trustless. The creator controls the pot
+wallet and can move its balance outside Worm Bits. The wallet must also retain
+enough extra balance to cover outgoing Lightning routing fees.
 
 ## Development
 

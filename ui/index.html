@@ -149,6 +149,42 @@
                       </select>
                     </label>
                   </div>
+                  <div class="setup-row setup-row--payments">
+                    <label class="seed-field">
+                      <span>Entry fee (sats)</span>
+                      <input
+                        id="entry-fee-input"
+                        type="number"
+                        min="0"
+                        max="1000000"
+                        step="1"
+                        value="0"
+                        inputmode="numeric"
+                      />
+                    </label>
+                    <label class="seed-field">
+                      <span>Pot wallet</span>
+                      <select id="wallet-input">
+                        <option value="">Free room</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label
+                    id="create-payout-field"
+                    class="seed-field"
+                    hidden
+                  >
+                    <span>Your payout Lightning address</span>
+                    <input
+                      id="create-payout-input"
+                      maxlength="180"
+                      placeholder="you@example.com"
+                      autocomplete="email"
+                    />
+                  </label>
+                  <p id="payment-setup-note" class="setup-note">
+                    Free room. Set an entry fee to create a competitive pot.
+                  </p>
                   <button
                     id="create-room-button"
                     class="primary-button"
@@ -206,6 +242,7 @@
                 <span>Room</span>
                 <strong id="lobby-room-code">—</strong>
               </div>
+              <p id="lobby-payment-summary" class="payment-summary"></p>
               <div id="lobby-participants" class="lobby-participants"></div>
               <div id="lobby-join-controls" class="lobby-controls" hidden>
                 <label class="seed-field">
@@ -215,6 +252,19 @@
                     maxlength="24"
                     value="Anonymous Bit"
                     autocomplete="nickname"
+                  />
+                </label>
+                <label
+                  id="lobby-payout-field"
+                  class="seed-field"
+                  hidden
+                >
+                  <span>Payout Lightning address</span>
+                  <input
+                    id="lobby-payout-input"
+                    maxlength="180"
+                    placeholder="you@example.com"
+                    autocomplete="email"
                   />
                 </label>
                 <div class="lobby-actions">
@@ -235,7 +285,16 @@
                 </div>
               </div>
               <div id="lobby-player-controls" class="lobby-controls" hidden>
+                <p id="lobby-payment-state" class="payment-state"></p>
                 <div class="lobby-actions">
+                  <button
+                    id="lobby-payment-button"
+                    class="primary-button"
+                    type="button"
+                    hidden
+                  >
+                    Pay entry invoice
+                  </button>
                   <button
                     id="lobby-ready-button"
                     class="secondary-button"
@@ -292,6 +351,7 @@
               <p class="eyebrow">Match complete</p>
               <h2 id="result-title">Magenta wins</h2>
               <p id="result-summary">The current belongs to Magenta.</p>
+              <p id="result-settlement-status" class="payment-state"></p>
               <div class="result-actions">
                 <button
                   id="replay-button"
@@ -301,6 +361,14 @@
                   Replay match
                 </button>
                 <button
+                  id="settle-button"
+                  class="primary-button"
+                  type="button"
+                  hidden
+                >
+                  Settle pot
+                </button>
+                <button
                   id="rematch-button"
                   class="primary-button"
                   type="button"
@@ -308,6 +376,51 @@
                   New terrain
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div
+            id="payment-overlay"
+            class="game-overlay game-overlay--payment"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payment-title"
+            hidden
+          >
+            <div class="overlay-card payment-card">
+              <img
+                src="/ext-assets/wormbits/assets/icon.png"
+                alt=""
+                aria-hidden="true"
+              />
+              <p class="eyebrow">Lightning entry</p>
+              <h2 id="payment-title">Pay to deploy</h2>
+              <p id="payment-status">Waiting for payment confirmation.</p>
+              <strong id="payment-amount" class="payment-amount">0 sats</strong>
+              <code id="payment-request" class="payment-request"></code>
+              <div class="lobby-actions">
+                <button
+                  id="payment-copy-button"
+                  class="secondary-button"
+                  type="button"
+                >
+                  Copy invoice
+                </button>
+                <button
+                  id="payment-open-button"
+                  class="primary-button"
+                  type="button"
+                >
+                  Open wallet
+                </button>
+              </div>
+              <button
+                id="payment-close-button"
+                class="secondary-button payment-close-button"
+                type="button"
+              >
+                Continue in lobby
+              </button>
             </div>
           </div>
 

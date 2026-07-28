@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "tables": {
     "wormbits_rooms": {
       "fields": [
@@ -15,10 +15,17 @@
         {"name": "revision", "type": "integer"},
         {"name": "action_count", "type": "integer"},
         {"name": "winner_slot", "type": "integer"},
+        {"name": "wallet_id", "type": "string"},
+        {"name": "wallet_name", "type": "string"},
+        {"name": "entry_fee_sats", "type": "integer"},
+        {"name": "pot_sats", "type": "integer"},
+        {"name": "settlement_status", "type": "string"},
+        {"name": "settlement_kind", "type": "string"},
         {"name": "created_at", "type": "datetime"},
         {"name": "updated_at", "type": "datetime"},
         {"name": "started_at", "type": "datetime", "nullable": true},
-        {"name": "completed_at", "type": "datetime", "nullable": true}
+        {"name": "completed_at", "type": "datetime", "nullable": true},
+        {"name": "settled_at", "type": "datetime", "nullable": true}
       ]
     },
     "wormbits_participants": {
@@ -32,6 +39,12 @@
         {"name": "ready", "type": "boolean"},
         {"name": "connection_state", "type": "string"},
         {"name": "forfeited", "type": "boolean"},
+        {"name": "ln_address", "type": "string"},
+        {"name": "join_request_id", "type": "string"},
+        {"name": "payment_hash", "type": "string"},
+        {"name": "payment_request", "type": "string"},
+        {"name": "payment_status", "type": "string"},
+        {"name": "paid_at", "type": "datetime", "nullable": true},
         {"name": "last_seen_at", "type": "datetime"},
         {"name": "disconnected_at", "type": "datetime", "nullable": true},
         {"name": "joined_at", "type": "datetime"},
@@ -52,6 +65,35 @@
         {"name": "payload_json", "type": "string"},
         {"name": "created_at", "type": "datetime"}
       ]
+    },
+    "wormbits_payment_intents": {
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "room_id", "type": "string"},
+        {"name": "participant_id", "type": "string"},
+        {"name": "amount_sats", "type": "integer"},
+        {"name": "status", "type": "string"},
+        {"name": "created_at", "type": "datetime"},
+        {"name": "settled_at", "type": "datetime", "nullable": true}
+      ]
+    },
+    "wormbits_settlements": {
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "room_id", "type": "string"},
+        {"name": "participant_id", "type": "string"},
+        {"name": "kind", "type": "string"},
+        {"name": "reason", "type": "string"},
+        {"name": "amount_sats", "type": "integer"},
+        {"name": "status", "type": "string"},
+        {"name": "attempt_count", "type": "integer"},
+        {"name": "checking_id", "type": "string"},
+        {"name": "payment_hash", "type": "string"},
+        {"name": "error", "type": "string"},
+        {"name": "created_at", "type": "datetime"},
+        {"name": "updated_at", "type": "datetime"},
+        {"name": "completed_at", "type": "datetime", "nullable": true}
+      ]
     }
   },
   "indexes": [
@@ -64,6 +106,36 @@
       "table": "wormbits_actions",
       "name": "wormbits_actions_by_room",
       "field": "room_id"
+    },
+    {
+      "table": "wormbits_participants",
+      "name": "wormbits_participants_by_join_request",
+      "field": "join_request_id"
+    },
+    {
+      "table": "wormbits_participants",
+      "name": "wormbits_participants_by_payment_hash",
+      "field": "payment_hash"
+    },
+    {
+      "table": "wormbits_payment_intents",
+      "name": "wormbits_payment_intents_by_room",
+      "field": "room_id"
+    },
+    {
+      "table": "wormbits_payment_intents",
+      "name": "wormbits_payment_intents_by_participant",
+      "field": "participant_id"
+    },
+    {
+      "table": "wormbits_settlements",
+      "name": "wormbits_settlements_by_room",
+      "field": "room_id"
+    },
+    {
+      "table": "wormbits_settlements",
+      "name": "wormbits_settlements_by_participant",
+      "field": "participant_id"
     }
   ]
 }

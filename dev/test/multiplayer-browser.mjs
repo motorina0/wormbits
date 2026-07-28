@@ -74,11 +74,44 @@ const origin = `http://127.0.0.1:${address.port}`
 const browser = await chromium.launch({headless: true})
 
 try {
+  const permissionPage = await browser.newPage({
+    viewport: {width: 1280, height: 900}
+  })
+  await permissionPage.goto(`${origin}/host?permissionError=1`)
+  const permissionFrame = permissionPage.frameLocator('#game-frame')
+  await permissionFrame.getByRole('heading', {name: 'Worm Bits'}).waitFor()
+  await permissionFrame
+    .getByRole('button', {name: 'Create multiplayer lobby'})
+    .click()
+  await permissionPage.waitForFunction(
+    () => document.body.dataset.toastLevel === 'warning'
+  )
+  const permissionToast = await permissionPage.locator('body').evaluate(body => ({
+    level: body.dataset.toastLevel,
+    message: body.dataset.toastMessage
+  }))
+  assert.equal(permissionToast.level, 'warning')
+  assert.match(permissionToast.message, /ext\.storage\.write/)
+  assert.match(permissionToast.message, /LNbits administrator/)
+  await permissionPage.close()
+
   const hostPage = await browser.newPage({viewport: {width: 1280, height: 900}})
   collectErrors(hostPage)
   await hostPage.goto(`${origin}/host`)
   const host = hostPage.frameLocator('#game-frame')
   await host.getByRole('heading', {name: 'Worm Bits'}).waitFor()
+  await host
+    .getByLabel('Pot wallet')
+    .locator('option', {hasText: 'Browser wallet'})
+    .waitFor({state: 'attached'})
+  await host.getByLabel('Entry fee (sats)').fill('25')
+  assert.equal(await host.getByLabel('Pot wallet').isDisabled(), false)
+  assert.equal(
+    await host.getByLabel('Your payout Lightning address').isVisible(),
+    true
+  )
+  await host.getByLabel('Entry fee (sats)').fill('0')
+  assert.equal(await host.getByLabel('Pot wallet').isDisabled(), true)
   await host.getByLabel('Display name').first().fill('Host')
   await host.getByLabel('Players').selectOption('2')
   await host.getByRole('button', {name: 'Create multiplayer lobby'}).click()
@@ -232,6 +265,13 @@ function createMockBackend() {
     },
     request({method, path, body = {}}) {
       const url = new URL(path, 'http://wormbits.test')
+      if (method === 'GET' && url.pathname.endsWith('/wallets')) {
+        return wrapped({
+          wallets: [
+            {id: 'wallet_1', name: 'Browser wallet', currency: 'sat'}
+          ]
+        })
+      }
       const parts = url.pathname.split('/').filter(Boolean)
       const suffix = parts.slice(parts.indexOf('rooms') + 1)
 
@@ -256,6 +296,11 @@ function createMockBackend() {
           revision: 1,
           actionCount: 0,
           winnerSlot: -1,
+          walletName: '',
+          entryFeeSats: 0,
+          potSats: 0,
+          settlementStatus: 'none',
+          settlementKind: '',
           createdAt: 1,
           updatedAt: 1,
           startedAt: 0,
@@ -406,6 +451,8 @@ function createMockBackend() {
       ready: item.ready,
       connected: item.connected,
       forfeited: item.forfeited,
+      paymentStatus: 'free',
+      payoutAddress: '',
       host: item.id === room.hostPlayerId,
       joinedAt: item.joinedAt,
       lastClientSeq: item.lastClientSeq
@@ -483,19 +530,33 @@ function harnessSource() {
           subscriptions.delete(message.subscriptionId)
           data = {ok: true}
         } else if (message.action === 'ui.notify') {
+          document.body.dataset.toastLevel = message.level
+          document.body.dataset.toastMessage = message.message
           data = {ok: true}
         } else if (message.action === 'api') {
-          const response = await fetch('/mock-api', {
-            method: 'POST',
-            headers: {'content-type': 'application/json'},
-            body: JSON.stringify({
-              method: message.method,
-              path: message.path,
-              body: message.body || {}
+          if (
+            query.get('permissionError') === '1' &&
+            message.method === 'POST' &&
+            message.path.endsWith('/rooms')
+          ) {
+            data = {
+              ok: false,
+              error:
+                "Extension 'wormbits' is missing permission 'ext.storage.write'."
+            }
+          } else {
+            const response = await fetch('/mock-api', {
+              method: 'POST',
+              headers: {'content-type': 'application/json'},
+              body: JSON.stringify({
+                method: message.method,
+                path: message.path,
+                body: message.body || {}
+              })
             })
-          })
-          data = await response.json()
-          if (message.method !== 'GET') channel.postMessage({type: 'update'})
+            data = await response.json()
+            if (message.method !== 'GET') channel.postMessage({type: 'update'})
+          }
         } else {
           throw new Error('Unsupported bridge action: ' + message.action)
         }

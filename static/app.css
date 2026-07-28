@@ -57,6 +57,11 @@ button {
   color: inherit;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
@@ -430,6 +435,10 @@ h1 {
   gap: 9px;
 }
 
+.setup-row--payments {
+  grid-template-columns: minmax(120px, 0.65fr) minmax(0, 1.35fr);
+}
+
 .join-room-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -448,6 +457,19 @@ h1 {
 
 .lobby-card {
   width: min(600px, 100%);
+}
+
+.payment-summary,
+.payment-state {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.payment-summary strong,
+.payment-state strong {
+  color: var(--yellow);
 }
 
 .room-code {
@@ -551,6 +573,42 @@ h1 {
   justify-content: center;
   gap: 10px;
   margin-top: 23px;
+}
+
+.game-overlay--payment {
+  z-index: 8;
+  background: rgba(12, 11, 15, 0.88);
+}
+
+.payment-card {
+  width: min(500px, 100%);
+}
+
+.payment-amount {
+  display: block;
+  margin: 16px 0 12px;
+  color: var(--yellow);
+  font-size: 1.4rem;
+}
+
+.payment-request {
+  display: block;
+  max-height: 92px;
+  margin-bottom: 16px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 11px;
+  color: var(--cyan);
+  background: #111014;
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.payment-close-button {
+  width: 100%;
+  margin-top: 9px;
 }
 
 .announcement {

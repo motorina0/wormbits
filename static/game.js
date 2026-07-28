@@ -22,6 +22,11 @@ const startButton = requiredElement('start-button')
 const playerNameInput = requiredElement('player-name-input')
 const roomNameInput = requiredElement('room-name-input')
 const maxPlayersInput = requiredElement('max-players-input')
+const entryFeeInput = requiredElement('entry-fee-input')
+const walletInput = requiredElement('wallet-input')
+const createPayoutField = requiredElement('create-payout-field')
+const createPayoutInput = requiredElement('create-payout-input')
+const paymentSetupNote = requiredElement('payment-setup-note')
 const createRoomButton = requiredElement('create-room-button')
 const roomCodeInput = requiredElement('room-code-input')
 const openRoomButton = requiredElement('open-room-button')
@@ -31,12 +36,17 @@ const lobbyConnection = requiredElement('lobby-connection')
 const lobbyTitle = requiredElement('lobby-title')
 const lobbySummary = requiredElement('lobby-summary')
 const lobbyRoomCode = requiredElement('lobby-room-code')
+const lobbyPaymentSummary = requiredElement('lobby-payment-summary')
 const lobbyParticipants = requiredElement('lobby-participants')
 const lobbyJoinControls = requiredElement('lobby-join-controls')
 const lobbyPlayerControls = requiredElement('lobby-player-controls')
 const lobbyNameInput = requiredElement('lobby-name-input')
+const lobbyPayoutField = requiredElement('lobby-payout-field')
+const lobbyPayoutInput = requiredElement('lobby-payout-input')
 const joinRoomButton = requiredElement('join-room-button')
 const spectateRoomButton = requiredElement('spectate-room-button')
+const lobbyPaymentState = requiredElement('lobby-payment-state')
+const lobbyPaymentButton = requiredElement('lobby-payment-button')
 const lobbyReadyButton = requiredElement('lobby-ready-button')
 const lobbyStartButton = requiredElement('lobby-start-button')
 const copyInviteButton = requiredElement('copy-invite-button')
@@ -45,6 +55,15 @@ const restartButton = requiredElement('restart-button')
 const handoffButton = requiredElement('handoff-button')
 const replayButton = requiredElement('replay-button')
 const rematchButton = requiredElement('rematch-button')
+const settleButton = requiredElement('settle-button')
+const resultSettlementStatus = requiredElement('result-settlement-status')
+const paymentOverlay = requiredElement('payment-overlay')
+const paymentStatus = requiredElement('payment-status')
+const paymentAmount = requiredElement('payment-amount')
+const paymentRequest = requiredElement('payment-request')
+const paymentCopyButton = requiredElement('payment-copy-button')
+const paymentOpenButton = requiredElement('payment-open-button')
+const paymentCloseButton = requiredElement('payment-close-button')
 const skipButton = requiredElement('skip-button')
 const soundToggle = requiredElement('sound-toggle')
 const announcement = requiredElement('announcement')
@@ -102,6 +121,9 @@ const online = {
   room: null,
   participants: [],
   viewer: null,
+  wallets: [],
+  invoice: null,
+  settlements: [],
   token: '',
   revision: 0,
   websocket: null,
@@ -110,7 +132,10 @@ const online = {
   refreshTimer: null,
   requestQueue: Promise.resolve(),
   clientSeq: 0,
-  applying: false
+  applying: false,
+  settling: false,
+  createRequestId: '',
+  joinRequestId: ''
 }
 
 startButton.addEventListener('click', () => {
@@ -121,6 +146,8 @@ startButton.addEventListener('click', () => {
 createRoomButton.addEventListener('click', () => {
   runOnlineUiAction(createOnlineRoom)
 })
+
+entryFeeInput.addEventListener('input', updatePaymentSetup)
 
 openRoomButton.addEventListener('click', () => {
   runOnlineUiAction(() => enterOnlineRoom(roomCodeInput.value))
@@ -138,6 +165,14 @@ lobbyReadyButton.addEventListener('click', () => {
   runOnlineUiAction(toggleOnlineReady)
 })
 
+lobbyPaymentButton.addEventListener('click', () => {
+  if (online.viewer?.paymentStatus === 'pending' && online.invoice) {
+    showPaymentInvoice(online.invoice)
+    return
+  }
+  runOnlineUiAction(settleOnlineRoom)
+})
+
 lobbyStartButton.addEventListener('click', () => {
   runOnlineUiAction(startOnlineMatch)
 })
@@ -147,7 +182,7 @@ copyInviteButton.addEventListener('click', () => {
 })
 
 leaveRoomButton.addEventListener('click', () => {
-  leaveOnlineRoom()
+  runOnlineUiAction(leaveOrForfeitOnlineRoom)
 })
 
 restartButton.addEventListener('click', async () => {
@@ -171,6 +206,10 @@ replayButton.addEventListener('click', () => {
   startReplay(lastReplay)
 })
 
+settleButton.addEventListener('click', () => {
+  runOnlineUiAction(settleOnlineRoom)
+})
+
 rematchButton.addEventListener('click', () => {
   if (mode === 'online') {
     leaveOnlineRoom()
@@ -188,6 +227,18 @@ skipButton.addEventListener('click', () => {
 soundToggle.addEventListener('click', () => {
   audio.setMuted(!audio.muted)
   updateSoundButton()
+})
+
+paymentCopyButton.addEventListener('click', () => {
+  runOnlineUiAction(copyPaymentInvoice)
+})
+
+paymentOpenButton.addEventListener('click', () => {
+  openPaymentWallet()
+})
+
+paymentCloseButton.addEventListener('click', () => {
+  paymentOverlay.hidden = true
 })
 
 for (const button of weaponButtons) {
@@ -266,12 +317,15 @@ window.wormbitsDebug = Object.freeze({
     ),
     roomId: online.room?.id ?? null,
     roomStatus: online.room?.status ?? null,
+    entryFeeSats: online.room?.entryFeeSats ?? 0,
+    settlementStatus: online.room?.settlementStatus ?? '',
     revision: online.revision,
     viewer: online.viewer
       ? {
           role: online.viewer.role,
           slot: online.viewer.slot,
-          connected: online.viewer.connected
+          connected: online.viewer.connected,
+          paymentStatus: online.viewer.paymentStatus
         }
       : null
   })
@@ -279,6 +333,7 @@ window.wormbitsDebug = Object.freeze({
 
 resizeCanvas()
 rebuildTerrain()
+updatePaymentSetup()
 updateInterface()
 requestAnimationFrame(frame)
 initializeMultiplayer().catch(showOnlineError)
@@ -542,6 +597,7 @@ function finishMatch(event) {
     ? 'No bits remain on the island.'
     : `${event.teamName} controls the final channel after ${simulation.turnNumber} turns.`
   replayButton.hidden = mode === 'replay' || !lastReplay
+  renderOnlineSettlement()
   resultOverlay.hidden = false
   audio.play('winner')
 }
@@ -1215,6 +1271,7 @@ async function initializeMultiplayer() {
     onlineUnavailable.hidden = true
     const roomId = online.context?.routeParams?.roomId
     if (roomId) await enterOnlineRoom(roomId)
+    else await loadOnlineWallets()
   } catch (error) {
     if (
       String(error?.message || error).includes(
@@ -1236,18 +1293,76 @@ function disableOnlineSetup() {
   }
 }
 
+async function loadOnlineWallets() {
+  try {
+    const response = await multiplayerClient.listWallets()
+    online.wallets = response.wallets || []
+  } catch (error) {
+    online.wallets = []
+    showOnlineError(error)
+  }
+  walletInput.replaceChildren(
+    new Option('Free room', ''),
+    ...online.wallets.map(wallet => new Option(wallet.name || wallet.id, wallet.id))
+  )
+  updatePaymentSetup()
+}
+
+function updatePaymentSetup() {
+  const entryFeeSats = Number(entryFeeInput.value || 0)
+  const paid = Number.isFinite(entryFeeSats) && entryFeeSats > 0
+  walletInput.disabled = !paid
+  createPayoutField.hidden = !paid
+  paymentSetupNote.textContent = paid
+    ? online.wallets.length
+      ? 'The selected wallet holds the pot and pays server-validated winnings or refunds.'
+      : 'No eligible LNbits wallet is available for a paid room.'
+    : 'Free room. Set an entry fee to create a competitive pot.'
+}
+
+function paymentEntryFee() {
+  const amount = Number(entryFeeInput.value || 0)
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1_000_000) {
+    throw new Error('Entry fee must be a whole number from 0 to 1,000,000 sats.')
+  }
+  return amount
+}
+
 async function createOnlineRoom() {
   requireOnline()
+  const entryFeeSats = paymentEntryFee()
+  const maxPlayers = Number(maxPlayersInput.value)
+  if (entryFeeSats > 0) {
+    if (!walletInput.value) {
+      throw new Error('Select an LNbits wallet for the room pot.')
+    }
+    await multiplayerClient.requestBackgroundPaymentPermission({
+      walletId: walletInput.value,
+      maxAmount: entryFeeSats * maxPlayers,
+      destinationPolicy: 'external_allowed'
+    })
+  }
+  online.createRequestId ||= secureRequestId()
   const response = await multiplayerClient.createRoom({
     name: roomNameInput.value,
     playerName: playerNameInput.value,
-    maxPlayers: Number(maxPlayersInput.value),
-    seed: seedInput.value
+    maxPlayers,
+    seed: seedInput.value,
+    entryFeeSats,
+    walletId: entryFeeSats > 0 ? walletInput.value : '',
+    lnAddress: entryFeeSats > 0 ? createPayoutInput.value : '',
+    requestId: online.createRequestId
   })
+  online.createRequestId = ''
   await saveOnlineToken(response.room.id, response.viewer.token)
   applyOnlineView(response, {forceSnapshot: true})
   startOnlineRealtime()
-  announce('Multiplayer lobby created')
+  if (response.invoice) {
+    showPaymentInvoice(response.invoice)
+    announce('Lobby created · pay the entry invoice')
+  } else {
+    announce('Multiplayer lobby created')
+  }
 }
 
 async function enterOnlineRoom(value) {
@@ -1273,12 +1388,24 @@ async function joinOnlineRoom() {
   if (online.room.status !== 'waiting') {
     throw new Error('This match has already started. Join as a spectator.')
   }
+  online.joinRequestId ||= secureRequestId()
   const response = await multiplayerClient.joinRoom(online.room.id, {
-    playerName: lobbyNameInput.value
+    playerName: lobbyNameInput.value,
+    lnAddress:
+      Number(online.room.entryFeeSats || 0) > 0
+        ? lobbyPayoutInput.value
+        : '',
+    requestId: online.joinRequestId
   })
+  online.joinRequestId = ''
   await saveOnlineToken(online.room.id, response.viewer.token)
   applyOnlineView(response, {forceSnapshot: true})
-  announce('Joined the lobby')
+  if (response.invoice) {
+    showPaymentInvoice(response.invoice)
+    announce('Entry invoice ready')
+  } else {
+    announce('Joined the lobby')
+  }
 }
 
 async function spectateOnlineRoom() {
@@ -1316,6 +1443,70 @@ async function forfeitOnlineMatch() {
   })
   applyOnlineView(response, {forceSnapshot: true})
   announce('Your team forfeited')
+}
+
+async function leaveOrForfeitOnlineRoom() {
+  if (
+    online.room?.status === 'waiting' &&
+    online.viewer?.role === 'player' &&
+    !online.viewer.forfeited
+  ) {
+    const response = await multiplayerClient.forfeit(online.room.id, {
+      playerToken: online.token
+    })
+    applyOnlineView(response, {forceSnapshot: true})
+    const refundStatus = online.viewer?.paymentStatus
+    if (
+      ['refund-failed', 'refund-processing', 'refund-review'].includes(
+        refundStatus
+      )
+    ) {
+      announce({
+        'refund-failed': 'Refund failed · retry before leaving',
+        'refund-processing': 'Refund is processing · keep this room token',
+        'refund-review': 'Refund needs manual review · keep this room token'
+      }[refundStatus])
+      return
+    }
+  }
+  const roomId = online.room?.id || ''
+  if (roomId) await saveOnlineToken(roomId, '')
+  leaveOnlineRoom()
+}
+
+async function settleOnlineRoom() {
+  requireOnlinePlayer()
+  if (online.settling) return
+  online.settling = true
+  renderOnlineSettlement()
+  try {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const response = await multiplayerClient.settleRoom(online.room.id, {
+        playerToken: online.token
+      })
+      applyOnlineView(response, {forceSnapshot: true})
+      const retryable = online.settlements.filter(
+        settlement =>
+          settlement.kind === 'payout' &&
+          ['pending', 'failed'].includes(settlement.status)
+      )
+      const failed = retryable.some(
+        settlement => settlement.status === 'failed'
+      )
+      if (!retryable.length || failed || online.room.status === 'waiting') {
+        break
+      }
+    }
+    const status = online.room?.settlementStatus
+    if (status === 'paid') announce('Worm Bits pot settled')
+    else if (status === 'failed') announce('Payout failed · retry is available')
+    else if (online.viewer?.paymentStatus === 'refunded') {
+      announce('Entry fee refunded')
+    }
+  } finally {
+    online.settling = false
+    renderOnlineSettlement()
+  }
 }
 
 async function copyOnlineInvite() {
@@ -1403,6 +1594,8 @@ function applyOnlineView(
   online.room = response.room
   online.participants = response.participants || []
   online.viewer = response.viewer || null
+  online.invoice = response.invoice || null
+  online.settlements = response.settlements || []
   online.token = online.viewer?.token || online.token || ''
   online.revision = responseRevision
   online.clientSeq = Math.max(
@@ -1412,6 +1605,12 @@ function applyOnlineView(
   roomCodeInput.value = response.room.id
   lobbyNameInput.value =
     online.viewer?.name || playerNameInput.value || 'Anonymous Bit'
+  if (
+    online.viewer &&
+    !['pending', 'refund-pending'].includes(online.viewer.paymentStatus)
+  ) {
+    paymentOverlay.hidden = true
+  }
 
   const shouldRestore =
     response.snapshot &&
@@ -1428,7 +1627,10 @@ function applyOnlineView(
     )
   }
 
-  if (response.room.status !== 'waiting' && !online.viewer) {
+  if (
+    response.room.status !== 'waiting' &&
+    (!online.viewer || !onlineEntryConfirmed(online.viewer))
+  ) {
     mode = 'online-lobby'
     paused = true
     setupOverlay.hidden = true
@@ -1469,6 +1671,7 @@ function applyOnlineView(
     }
   }
   renderOnlineLobby()
+  renderOnlineSettlement()
   updateInterface()
 }
 
@@ -1510,11 +1713,24 @@ function renderOnlineLobby() {
   const players = online.participants.filter(
     participant => participant.role === 'player' && !participant.forfeited
   )
-  const readyPlayers = players.filter(participant => participant.ready)
+  const confirmedPlayers = players.filter(onlineEntryConfirmed)
+  const pendingPlayers = players.filter(
+    participant => participant.paymentStatus === 'pending'
+  )
+  const readyPlayers = confirmedPlayers.filter(
+    participant => participant.ready
+  )
   lobbySummary.textContent =
     online.room.status === 'waiting'
-      ? `${players.length} / ${online.room.maxPlayers} players · ${readyPlayers.length} ready`
-      : `${players.length} players · ${online.room.spectatorCount} watching`
+      ? `${confirmedPlayers.length} / ${online.room.maxPlayers} confirmed · ${readyPlayers.length} ready${
+          pendingPlayers.length ? ` · ${pendingPlayers.length} paying` : ''
+        }`
+      : `${confirmedPlayers.length} players · ${online.room.spectatorCount} watching`
+  lobbyPaymentSummary.textContent =
+    Number(online.room.entryFeeSats || 0) > 0
+      ? `${online.room.entryFeeSats} sats per player · ${online.room.potSats} sats currently in the pot`
+      : 'Free room · no Lightning payment required'
+  lobbyPayoutField.hidden = Number(online.room.entryFeeSats || 0) <= 0
   lobbyParticipants.replaceChildren(
     ...online.participants.map(participant => {
       const row = document.createElement('div')
@@ -1541,11 +1757,21 @@ function renderOnlineLobby() {
       const state = document.createElement('span')
       state.className = 'lobby-participant__state'
       state.textContent = participant.forfeited
-        ? 'Forfeited'
+        ? participant.paymentStatus === 'refund-failed'
+          ? 'Refund retry'
+          : participant.paymentStatus === 'refund-review'
+            ? 'Refund review'
+          : participant.paymentStatus === 'refund-processing'
+            ? 'Refund processing'
+            : participant.paymentStatus === 'refunded'
+              ? 'Refunded'
+              : 'Forfeited'
         : !participant.connected
           ? 'Offline'
           : participant.role === 'spectator'
             ? 'Watching'
+            : participant.paymentStatus === 'pending'
+              ? 'Payment pending'
             : participant.ready
               ? 'Ready'
               : 'Not ready'
@@ -1554,20 +1780,133 @@ function renderOnlineLobby() {
     })
   )
 
-  lobbyJoinControls.hidden = !!online.viewer && !online.viewer.forfeited
-  joinRoomButton.hidden = online.room.status !== 'waiting'
+  const refundNeedsAttention =
+    online.viewer?.forfeited === true &&
+    [
+      'refund-pending',
+      'refund-failed',
+      'refund-processing',
+      'refund-review'
+    ].includes(online.viewer?.paymentStatus)
+  const retryableRefund =
+    refundNeedsAttention &&
+    ['refund-pending', 'refund-failed'].includes(
+      online.viewer?.paymentStatus
+    )
+  lobbyJoinControls.hidden =
+    !!online.viewer && (!online.viewer.forfeited || refundNeedsAttention)
+  joinRoomButton.hidden =
+    online.room.status !== 'waiting' ||
+    confirmedPlayers.length >= online.room.maxPlayers
   lobbyPlayerControls.hidden =
     !online.viewer ||
     online.viewer.role !== 'player' ||
-    online.viewer.forfeited
-  lobbyReadyButton.hidden = online.room.status !== 'waiting'
+    (online.viewer.forfeited && !refundNeedsAttention)
+  lobbyPaymentState.textContent = onlinePaymentState()
+  lobbyPaymentButton.hidden =
+    online.viewer?.paymentStatus !== 'pending' && !retryableRefund
+  lobbyPaymentButton.textContent =
+    online.viewer?.paymentStatus === 'pending'
+      ? 'Pay entry invoice'
+      : 'Retry refund'
+  lobbyReadyButton.hidden =
+    online.room.status !== 'waiting' ||
+    !onlineEntryConfirmed(online.viewer) ||
+    refundNeedsAttention
   lobbyReadyButton.textContent = online.viewer?.ready
     ? 'Cancel ready'
     : 'Ready up'
   const host = online.viewer?.host === true
   lobbyStartButton.hidden = online.room.status !== 'waiting' || !host
   lobbyStartButton.disabled =
-    players.length < 2 || players.some(player => !player.ready)
+    confirmedPlayers.length < 2 ||
+    confirmedPlayers.some(player => !player.ready)
+  leaveRoomButton.textContent =
+    online.room.status === 'waiting' &&
+    online.viewer?.paymentStatus === 'paid'
+      ? 'Leave & refund'
+      : 'Leave'
+}
+
+function renderOnlineSettlement() {
+  const paidRoom = Number(online.room?.entryFeeSats || 0) > 0
+  if (mode !== 'online' || online.room?.status !== 'completed' || !paidRoom) {
+    resultSettlementStatus.textContent = ''
+    settleButton.hidden = true
+    return
+  }
+  const status = online.room.settlementStatus
+  const retryable = online.settlements.some(
+    settlement =>
+      settlement.kind === 'payout' &&
+      ['pending', 'failed'].includes(settlement.status)
+  )
+  resultSettlementStatus.textContent =
+    {
+      pending: `${online.room.potSats} sat pot is ready for settlement.`,
+      failed: 'A Lightning payout failed. It can be retried safely.',
+      processing:
+        'A payout is processing or needs manual review. Worm Bits will not retry it blindly.',
+      paid:
+        online.room.settlementKind === 'draw'
+          ? 'The pot was split and paid.'
+          : 'The winner was paid.',
+      'not-required': 'No payout is required.'
+    }[status] || 'Settlement state is being synchronized.'
+  settleButton.hidden =
+    !retryable || online.viewer?.role !== 'player'
+  settleButton.disabled = online.settling
+  settleButton.textContent =
+    status === 'failed' ? 'Retry payout' : 'Settle pot'
+}
+
+function onlinePaymentState() {
+  if (!online.viewer || online.viewer.role !== 'player') return ''
+  return (
+    {
+      free: 'No entry payment is required.',
+      pending: `Pay the ${online.room.entryFeeSats} sat invoice before readying.`,
+      paid: `Entry confirmed · ${online.room.entryFeeSats} sats added to the pot.`,
+      'refund-pending': 'Your entry refund is ready to send.',
+      'refund-failed': 'Your refund failed. Retry is available.',
+      'refund-processing':
+        'Your refund is processing and will not be retried blindly.',
+      'refund-review':
+        'Your refund outcome needs manual review and will not be retried blindly.',
+      refunded: 'Your entry fee was refunded.'
+    }[online.viewer.paymentStatus] || ''
+  )
+}
+
+function onlineEntryConfirmed(participant) {
+  return !!participant && ['free', 'paid'].includes(participant.paymentStatus)
+}
+
+function showPaymentInvoice(invoice) {
+  if (!invoice?.paymentRequest) {
+    throw new Error('The Worm Bits entry invoice is unavailable.')
+  }
+  online.invoice = invoice
+  paymentAmount.textContent = `${Number(invoice.amountSats || 0)} sats`
+  paymentRequest.textContent = invoice.paymentRequest
+  paymentStatus.textContent = 'Waiting for payment confirmation.'
+  paymentOverlay.hidden = false
+}
+
+async function copyPaymentInvoice() {
+  if (!online.invoice?.paymentRequest) {
+    throw new Error('The Worm Bits entry invoice is unavailable.')
+  }
+  await navigator.clipboard.writeText(online.invoice.paymentRequest)
+  announce('Entry invoice copied')
+}
+
+function openPaymentWallet() {
+  if (!online.invoice?.paymentRequest) {
+    showOnlineError(new Error('The Worm Bits entry invoice is unavailable.'))
+    return
+  }
+  window.location.assign(`lightning:${online.invoice.paymentRequest}`)
 }
 
 function startOnlineRealtime() {
@@ -1619,10 +1958,15 @@ function leaveOnlineRoom() {
   online.room = null
   online.participants = []
   online.viewer = null
+  online.invoice = null
+  online.settlements = []
   online.token = ''
   online.revision = 0
   online.clientSeq = 0
+  online.joinRequestId = ''
+  online.settling = false
   online.requestQueue = Promise.resolve()
+  paymentOverlay.hidden = true
   openSetup()
 }
 
@@ -1655,6 +1999,14 @@ function normalizeRoomId(value) {
   }
 }
 
+function secureRequestId() {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replaceAll('-', '')
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')
+}
+
 function requireOnline() {
   if (!online.available || !multiplayerClient) {
     throw new Error('Multiplayer is only available inside LNbits.')
@@ -1682,7 +2034,21 @@ function runOnlineUiAction(operation) {
 function showOnlineError(error) {
   const message = String(error?.message || error || 'Multiplayer error.')
   console.warn('[wormbits multiplayer]', message)
-  announce(message)
+  const permissionWarning = onlinePermissionWarning(message)
+  announce(permissionWarning || message)
+  if (permissionWarning) {
+    void multiplayerClient
+      ?.notify(permissionWarning, 'warning')
+      .catch(() => {})
+  }
+}
+
+function onlinePermissionWarning(message) {
+  const permission = message.match(
+    /missing permission ['"]([^'"]+)['"]/i
+  )?.[1]
+  if (!permission) return ''
+  return `Worm Bits could not complete that multiplayer request because the LNbits permission "${permission}" has not been granted. Ask an LNbits administrator to review the installed extension permissions.`
 }
 
 function announce(message) {

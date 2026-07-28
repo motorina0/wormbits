@@ -44,6 +44,53 @@ interface host {
     ok: bool
   }
 
+  record invoice-public-request {
+    source-id: string,
+    amount: f64,
+    currency: string,
+    memo: string,
+    extra: list<tuple<string, string>>
+  }
+
+  record invoice-response {
+    payment-hash: string,
+    payment-request: string,
+    checking-id: string
+  }
+
+  record pay-lnurl-request {
+    wallet-id: string,
+    lnurl: string,
+    amount: f64,
+    currency: string,
+    comment: option<string>,
+    description: string,
+    max-sat: option<u64>,
+    extra: list<tuple<string, string>>
+  }
+
+  record pay-invoice-response {
+    ok: bool,
+    error: option<string>,
+    checking-id: option<string>,
+    payment-hash: option<string>,
+    status: option<string>,
+    amount-msat: s64,
+    fee-msat: s64,
+    pending: bool,
+    success: bool
+  }
+
+  record user-wallet-summary {
+    id: string,
+    name: string,
+    currency: option<string>
+  }
+
+  record list-user-wallets-response {
+    wallets: list<user-wallet-summary>
+  }
+
   record websocket-publish-request {
     item-id: string,
     data-json: string
@@ -78,6 +125,9 @@ interface host {
   storage-set: func(request: storage-set-request) -> storage-set-response;
   storage-get-paginated: func(request: storage-paginated-request) -> storage-paginated-response;
   storage-delete: func(request: storage-delete-request) -> storage-delete-response;
+  create-invoice-public: func(request: invoice-public-request) -> invoice-response;
+  pay-lnurl: func(request: pay-lnurl-request) -> pay-invoice-response;
+  list-user-wallets: func() -> list-user-wallets-response;
   websocket-publish: func(request: websocket-publish-request) -> websocket-publish-response;
   random-id: func(request: random-id-request) -> random-id-response;
   now: func() -> now-response;
@@ -87,6 +137,7 @@ interface host {
 world wormbits {
   import host;
 
+  export list-wormbits-wallets: func(request-json: string) -> string;
   export create-wormbits-room: func(request-json: string) -> string;
   export get-wormbits-room: func(request-json: string) -> string;
   export join-wormbits-room: func(request-json: string) -> string;
@@ -96,4 +147,6 @@ world wormbits {
   export submit-wormbits-action: func(request-json: string) -> string;
   export heartbeat-wormbits-room: func(request-json: string) -> string;
   export forfeit-wormbits-match: func(request-json: string) -> string;
+  export settle-wormbits-room: func(request-json: string) -> string;
+  export record-wormbits-payment: func(event-json: string) -> string;
 }

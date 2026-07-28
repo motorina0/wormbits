@@ -1,0 +1,166 @@
+{
+  "version": 2,
+  "description": "Add entry payments, refunds, and idempotent room settlements.",
+  "operations": [
+    {
+      "op": "add_field",
+      "table": "wormbits_rooms",
+      "field": "wallet_id",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_rooms",
+      "field": "wallet_name",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_rooms",
+      "field": "entry_fee_sats",
+      "type": "integer",
+      "default": 0
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_rooms",
+      "field": "pot_sats",
+      "type": "integer",
+      "default": 0
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_rooms",
+      "field": "settlement_status",
+      "type": "string",
+      "default": "none"
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_rooms",
+      "field": "settlement_kind",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_rooms",
+      "field": "settled_at",
+      "type": "datetime",
+      "nullable": true
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_participants",
+      "field": "ln_address",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_participants",
+      "field": "join_request_id",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_participants",
+      "field": "payment_hash",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_participants",
+      "field": "payment_request",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_participants",
+      "field": "payment_status",
+      "type": "string",
+      "default": "free"
+    },
+    {
+      "op": "add_field",
+      "table": "wormbits_participants",
+      "field": "paid_at",
+      "type": "datetime",
+      "nullable": true
+    },
+    {
+      "op": "create_table",
+      "table": "wormbits_payment_intents",
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "room_id", "type": "string"},
+        {"name": "participant_id", "type": "string"},
+        {"name": "amount_sats", "type": "integer"},
+        {"name": "status", "type": "string"},
+        {"name": "created_at", "type": "datetime"},
+        {"name": "settled_at", "type": "datetime", "nullable": true}
+      ]
+    },
+    {
+      "op": "create_table",
+      "table": "wormbits_settlements",
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "room_id", "type": "string"},
+        {"name": "participant_id", "type": "string"},
+        {"name": "kind", "type": "string"},
+        {"name": "reason", "type": "string"},
+        {"name": "amount_sats", "type": "integer"},
+        {"name": "status", "type": "string"},
+        {"name": "attempt_count", "type": "integer"},
+        {"name": "checking_id", "type": "string"},
+        {"name": "payment_hash", "type": "string"},
+        {"name": "error", "type": "string"},
+        {"name": "created_at", "type": "datetime"},
+        {"name": "updated_at", "type": "datetime"},
+        {"name": "completed_at", "type": "datetime", "nullable": true}
+      ]
+    },
+    {
+      "op": "create_index",
+      "table": "wormbits_participants",
+      "name": "wormbits_participants_by_join_request",
+      "field": "join_request_id"
+    },
+    {
+      "op": "create_index",
+      "table": "wormbits_participants",
+      "name": "wormbits_participants_by_payment_hash",
+      "field": "payment_hash"
+    },
+    {
+      "op": "create_index",
+      "table": "wormbits_payment_intents",
+      "name": "wormbits_payment_intents_by_room",
+      "field": "room_id"
+    },
+    {
+      "op": "create_index",
+      "table": "wormbits_payment_intents",
+      "name": "wormbits_payment_intents_by_participant",
+      "field": "participant_id"
+    },
+    {
+      "op": "create_index",
+      "table": "wormbits_settlements",
+      "name": "wormbits_settlements_by_room",
+      "field": "room_id"
+    },
+    {
+      "op": "create_index",
+      "table": "wormbits_settlements",
+      "name": "wormbits_settlements_by_participant",
+      "field": "participant_id"
+    }
+  ]
+}

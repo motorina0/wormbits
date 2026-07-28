@@ -1,6 +1,9 @@
 import {
+  createInvoicePublic,
+  listUserWallets,
   log,
   now,
+  payLnurl,
   randomId,
   storageDelete,
   storageGet,
@@ -39,6 +42,56 @@ export const storage = {
       data: JSON.parse(response.rowsJson || '[]'),
       total: Number(response.total || 0)
     }
+  }
+}
+
+export const wallet = {
+  listUserWallets() {
+    return listUserWallets().wallets || []
+  },
+
+  createInvoicePublic({
+    sourceId,
+    amount,
+    currency = 'sat',
+    memo = '',
+    extra = {}
+  }) {
+    return createInvoicePublic({
+      sourceId,
+      amount: Number(amount),
+      currency,
+      memo,
+      extra: Object.entries(extra).map(([key, value]) => [
+        key,
+        String(value)
+      ])
+    })
+  },
+
+  payLnurl({
+    walletId,
+    lnurl,
+    amount,
+    currency = 'sat',
+    comment = '',
+    maxSat = 0,
+    description = '',
+    extra = {}
+  }) {
+    return payLnurl({
+      walletId,
+      lnurl,
+      amount: Number(amount),
+      currency,
+      comment: comment || undefined,
+      maxSat: maxSat > 0 ? BigInt(maxSat) : undefined,
+      description,
+      extra: Object.entries(extra).map(([key, value]) => [
+        key,
+        String(value)
+      ])
+    })
   }
 }
 
