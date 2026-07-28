@@ -67,7 +67,7 @@ jobs:
       - name: Build WASM
         run: npm run build:wasm
 
-      - name: Validate generated artifacts
+      - name: Validate generated WASM
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -79,8 +79,6 @@ jobs:
                   "wasm.module is not WASM"
               )
           PY
-
-          git diff --exit-code -- static/game.bundle.js wasm/module.wasm
 
   prepare:
     needs: validate

@@ -2,7 +2,7 @@
   "id": "wormbits",
   "name": "Worm Bits",
   "short_description": "Competitive 2–4 player LNbits artillery with optional Lightning entry fees.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "min_lnbits_version": "1.5.6",
   "tile": "/ext-assets/wormbits/assets/icon.png",
   "tags": ["gaming", "artillery", "multiplayer", "wasm"],
