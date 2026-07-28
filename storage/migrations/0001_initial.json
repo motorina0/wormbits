@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "op": "create_table",
+      "table": "wormbits_rooms",
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "name", "type": "string"},
+        {"name": "seed", "type": "string"},
+        {"name": "status", "type": "string"},
+        {"name": "max_players", "type": "integer"},
+        {"name": "player_count", "type": "integer"},
+        {"name": "spectator_count", "type": "integer"},
+        {"name": "host_player_id", "type": "string"},
+        {"name": "snapshot_json", "type": "string"},
+        {"name": "revision", "type": "integer"},
+        {"name": "action_count", "type": "integer"},
+        {"name": "winner_slot", "type": "integer"},
+        {"name": "created_at", "type": "datetime"},
+        {"name": "updated_at", "type": "datetime"},
+        {"name": "started_at", "type": "datetime", "nullable": true},
+        {"name": "completed_at", "type": "datetime", "nullable": true}
+      ]
+    },
+    {
+      "op": "create_table",
+      "table": "wormbits_participants",
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "room_id", "type": "string"},
+        {"name": "token", "type": "string"},
+        {"name": "role", "type": "string"},
+        {"name": "slot", "type": "integer"},
+        {"name": "name", "type": "string"},
+        {"name": "ready", "type": "boolean"},
+        {"name": "connection_state", "type": "string"},
+        {"name": "forfeited", "type": "boolean"},
+        {"name": "last_seen_at", "type": "datetime"},
+        {"name": "disconnected_at", "type": "datetime", "nullable": true},
+        {"name": "joined_at", "type": "datetime"},
+        {"name": "rate_window_at", "type": "datetime"},
+        {"name": "rate_count", "type": "integer"},
+        {"name": "last_client_seq", "type": "integer"}
+      ]
+    },
+    {
+      "op": "create_table",
+      "table": "wormbits_actions",
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "room_id", "type": "string"},
+        {"name": "revision", "type": "integer"},
+        {"name": "player_id", "type": "string"},
+        {"name": "slot", "type": "integer"},
+        {"name": "tick", "type": "integer"},
+        {"name": "type", "type": "string"},
+        {"name": "payload_json", "type": "string"},
+        {"name": "created_at", "type": "datetime"}
+      ]
+    },
+    {
+      "op": "create_index",
+      "table": "wormbits_participants",
+      "name": "wormbits_participants_by_room",
+      "field": "room_id"
+    },
+    {
+      "op": "create_index",
+      "table": "wormbits_actions",
+      "name": "wormbits_actions_by_room",
+      "field": "room_id"
+    }
+  ]
+}

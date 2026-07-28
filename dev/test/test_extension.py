@@ -8,21 +8,29 @@ from lnbits.core.wasm_ext.wasm.config import parse_wasm_extension_config
 EXTENSION_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_phase_one_manifest_is_permission_free_and_loadable() -> None:
+def test_multiplayer_manifest_exposes_scoped_routes_and_permissions() -> None:
     manifest = json.loads((EXTENSION_ROOT / "config.json").read_text(encoding="utf-8"))
 
     config = parse_wasm_extension_config("wormbits", manifest)
 
     assert config.name == "Worm Bits"
     assert config.extension_type == "wasm"
-    assert config.permissions == []
-    assert config.api_routes == []
-    assert config.wasm.exports == []
+    assert {permission.id for permission in config.permissions} == {
+        "ext.storage.read",
+        "ext.storage.write",
+        "websocket.publish",
+        "websocket.subscribe",
+    }
+    assert len(config.api_routes) == 9
+    assert len(config.wasm.exports) == 9
+    assert config.wasm.world == "wormbits"
     assert config.ui_routes[0].path == "/wormbits"
     assert config.ui_routes[0].auth == "user"
+    assert config.ui_routes[1].path == "/wormbits/rooms/{room_id}"
+    assert config.ui_routes[1].auth == "public"
 
 
-def test_phase_one_component_and_ui_assets_are_valid() -> None:
+def test_multiplayer_component_storage_and_ui_assets_are_valid() -> None:
     manifest = json.loads((EXTENSION_ROOT / "config.json").read_text(encoding="utf-8"))
     module_path = EXTENSION_ROOT / manifest["wasm"]["module"]
     entrypoint = EXTENSION_ROOT / manifest["ui_routes"][0]["entrypoint"]
@@ -34,5 +42,8 @@ def test_phase_one_component_and_ui_assets_are_valid() -> None:
     assert entrypoint.is_file()
     assert (EXTENSION_ROOT / "static" / "game.js").is_file()
     assert (EXTENSION_ROOT / "static" / "game.bundle.js").is_file()
+    assert (EXTENSION_ROOT / "static" / "lnbits-extension-sdk.js").is_file()
     assert (EXTENSION_ROOT / "static" / "simulation.js").is_file()
     assert (EXTENSION_ROOT / "static" / "assets" / "icon.png").is_file()
+    assert (EXTENSION_ROOT / "storage" / "schema.json").is_file()
+    assert (EXTENSION_ROOT / "storage" / "migrations" / "0001_initial.json").is_file()

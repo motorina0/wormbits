@@ -1,23 +1,153 @@
 {
   "id": "wormbits",
   "name": "Worm Bits",
-  "short_description": "A turn-based LNbits artillery game with destructible terrain.",
-  "version": "0.1.0",
+  "short_description": "Reliable 2–4 player LNbits artillery with destructible terrain.",
+  "version": "0.3.0",
   "min_lnbits_version": "1.5.6",
   "tile": "/ext-assets/wormbits/assets/icon.png",
-  "tags": ["gaming", "artillery", "wasm"],
+  "tags": ["gaming", "artillery", "multiplayer", "wasm"],
   "extension_type": "wasm",
   "wasm": {
     "module": "wasm/module.wasm",
-    "exports": []
+    "world": "wormbits",
+    "exports": [
+      {"name": "create-wormbits-room", "visibility": "authenticated"},
+      {"name": "get-wormbits-room", "visibility": "public"},
+      {"name": "join-wormbits-room", "visibility": "public"},
+      {"name": "spectate-wormbits-room", "visibility": "public"},
+      {"name": "set-wormbits-ready", "visibility": "public"},
+      {"name": "start-wormbits-match", "visibility": "public"},
+      {"name": "submit-wormbits-action", "visibility": "public"},
+      {"name": "heartbeat-wormbits-room", "visibility": "public"},
+      {"name": "forfeit-wormbits-match", "visibility": "public"}
+    ]
   },
   "ui_routes": [
     {
       "path": "/wormbits",
       "entrypoint": "ui/index.html",
       "auth": "user"
+    },
+    {
+      "path": "/wormbits/rooms/{room_id}",
+      "entrypoint": "ui/index.html",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"}
     }
   ],
-  "api_routes": [],
-  "permissions": []
+  "api_routes": [
+    {
+      "method": "POST",
+      "path": "/rooms",
+      "export": "create-wormbits-room",
+      "auth": "user"
+    },
+    {
+      "method": "GET",
+      "path": "/rooms/{room_id}",
+      "export": "get-wormbits-room",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/rooms/{room_id}/join",
+      "export": "join-wormbits-room",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/rooms/{room_id}/spectate",
+      "export": "spectate-wormbits-room",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/rooms/{room_id}/ready",
+      "export": "set-wormbits-ready",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/rooms/{room_id}/start",
+      "export": "start-wormbits-match",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/rooms/{room_id}/actions",
+      "export": "submit-wormbits-action",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/rooms/{room_id}/heartbeat",
+      "export": "heartbeat-wormbits-room",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/rooms/{room_id}/forfeit",
+      "export": "forfeit-wormbits-match",
+      "auth": "public",
+      "path_params": {"room_id": "roomId"},
+      "ownerContext": {
+        "table": "wormbits_rooms",
+        "idParam": "roomId"
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "ext.storage.read",
+      "description": "Read Worm Bits rooms, participants, actions, and durable snapshots."
+    },
+    {
+      "id": "ext.storage.write",
+      "description": "Persist Worm Bits rooms, participants, actions, and durable snapshots."
+    },
+    {
+      "id": "websocket.publish",
+      "description": "Publish Worm Bits lobby and match synchronization updates.",
+      "policies": [{"max_messages_per_second": 30}]
+    },
+    {
+      "id": "websocket.subscribe",
+      "description": "Receive live Worm Bits lobby and match updates."
+    }
+  ]
 }

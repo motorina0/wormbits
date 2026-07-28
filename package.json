@@ -4,9 +4,12 @@
   "type": "module",
   "scripts": {
     "build:browser": "node dev/build_browser.mjs",
-    "check": "node --check static/simulation.js && node --check static/game.js && node --check static/game.bundle.js && node --check dev/test/browser-smoke.mjs",
-    "test:unit": "node --test dev/test/simulation.test.mjs",
+    "build:backend": "node dev/build_backend.mjs",
+    "build:wasm": "npm run build:backend && npx --yes @bytecodealliance/jco componentize dev/dist/index.bundle.js --disable all --enable clocks --enable random --enable stdio --wit wasm/lnbits-extension.wit --world-name wormbits -o wasm/module.wasm",
+    "check": "node --check static/simulation.js && node --check static/game.js && node --check static/game.bundle.js && node --check static/lnbits-extension-sdk.js && node --check dev/src/index.js && node --check dev/test/browser-smoke.mjs && node --check dev/test/multiplayer-browser.mjs",
+    "test:unit": "node --test dev/test/simulation.test.mjs dev/test/multiplayer.test.mjs",
     "test:browser": "node dev/test/browser-smoke.mjs",
-    "test": "npm run build:browser && npm run check && npm run test:unit && npm run test:browser"
+    "test:multiplayer": "node dev/test/multiplayer-browser.mjs",
+    "test": "npm run build:browser && npm run build:backend && npm run check && npm run test:unit && npm run test:browser && npm run test:multiplayer"
   }
 }

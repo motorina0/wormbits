@@ -16,6 +16,18 @@ export const TEAM_DEFINITIONS = Object.freeze([
     name: 'Cyan',
     color: '#35e7ff',
     accent: '#d7fbff'
+  }),
+  Object.freeze({
+    id: 2,
+    name: 'Lime',
+    color: '#8dff70',
+    accent: '#e5ffdd'
+  }),
+  Object.freeze({
+    id: 3,
+    name: 'Gold',
+    color: '#ffe45c',
+    accent: '#fff6bd'
   })
 ])
 
@@ -50,17 +62,21 @@ const TERRAIN_START = 42
 const TERRAIN_END = WORLD_WIDTH - 43
 const TERRAIN_BOTTOM = WATER_LEVEL + 24
 const SPAWN_X = Object.freeze([
-  Object.freeze([190, 445, 705]),
-  Object.freeze([1410, 1155, 895])
+  Object.freeze([160, 640, 1120]),
+  Object.freeze([1440, 960, 480]),
+  Object.freeze([320, 800, 1280]),
+  Object.freeze([560, 1040, 1360])
 ])
+const SNAPSHOT_VERSION = 1
 
 export class WormBitsSimulation {
   constructor(options = {}) {
     this.seed = normalizeSeed(options.seed)
     this.turnDuration = clampNumber(options.turnDuration, 1, 300, TURN_DURATION)
     this.charactersPerTeam = clampInteger(options.charactersPerTeam, 1, 3, 3)
-    this.teamNames = TEAM_DEFINITIONS.map((team, index) =>
-      cleanName(options.teamNames?.[index], team.name)
+    this.teamCount = clampInteger(options.teamCount, 2, 4, 2)
+    this.teamNames = TEAM_DEFINITIONS.slice(0, this.teamCount).map(
+      (team, index) => cleanName(options.teamNames?.[index], team.name)
     )
     this.terrain = new Terrain(this.seed)
     this.units = this._createUnits()
@@ -68,7 +84,8 @@ export class WormBitsSimulation {
     this.phase = 'turn'
     this.turnNumber = 1
     this.activeTeam = 0
-    this.teamCursor = [1, 0]
+    this.teamCursor = Array(this.teamCount).fill(0)
+    this.teamCursor[0] = 1
     this.activeUnitId = this.units.find(unit => unit.team === 0)?.id ?? null
     this.turnTime = this.turnDuration
     this.selectedWeapon = 'launcher'
@@ -204,6 +221,7 @@ export class WormBitsSimulation {
       version: COMMAND_VERSION,
       seed: this.seed,
       teamNames: [...this.teamNames],
+      teamCount: this.teamCount,
       charactersPerTeam: this.charactersPerTeam,
       turnDuration: this.turnDuration,
       commands: this.commandLog.map(command => ({
@@ -215,6 +233,162 @@ export class WormBitsSimulation {
         ...(command.weapon === undefined ? {} : {weapon: command.weapon})
       }))
     }
+  }
+
+  exportSnapshot() {
+    return {
+      version: SNAPSHOT_VERSION,
+      seed: this.seed,
+      teamNames: [...this.teamNames],
+      teamCount: this.teamCount,
+      charactersPerTeam: this.charactersPerTeam,
+      turnDuration: this.turnDuration,
+      tick: this.tick,
+      phase: this.phase,
+      turnNumber: this.turnNumber,
+      activeTeam: this.activeTeam,
+      teamCursor: [...this.teamCursor],
+      activeUnitId: this.activeUnitId,
+      turnTime: this.turnTime,
+      selectedWeapon: this.selectedWeapon,
+      power: this.power,
+      charging: this.charging,
+      controls: {...this.controls},
+      projectile: this.projectile ? {...this.projectile} : null,
+      winner: this.winner,
+      resolutionElapsed: this.resolutionElapsed,
+      resolutionTimer: this.resolutionTimer,
+      terrain: {
+        craters: this.terrain.craters.map(crater => ({...crater}))
+      },
+      units: this.units.map(unit => ({...unit}))
+    }
+  }
+
+  static fromSnapshot(snapshot) {
+    if (
+      !snapshot ||
+      snapshot.version !== SNAPSHOT_VERSION ||
+      !Array.isArray(snapshot.units) ||
+      !Array.isArray(snapshot.terrain?.craters)
+    ) {
+      throw new Error('Unsupported Worm Bits snapshot.')
+    }
+    const simulation = new WormBitsSimulation({
+      seed: snapshot.seed,
+      teamNames: snapshot.teamNames,
+      teamCount: snapshot.teamCount,
+      charactersPerTeam: snapshot.charactersPerTeam,
+      turnDuration: snapshot.turnDuration
+    })
+    simulation.terrain = new Terrain(simulation.seed)
+    for (const crater of snapshot.terrain.craters) {
+      simulation.terrain.carveCircle(
+        clampNumber(crater.x, -WORLD_WIDTH, WORLD_WIDTH * 2, 0),
+        clampNumber(crater.y, -WORLD_HEIGHT, WORLD_HEIGHT * 2, 0),
+        clampNumber(crater.radius, 1, 200, 1)
+      )
+    }
+    simulation.units = snapshot.units.map(unit => ({
+      ...unit,
+      team: clampInteger(unit.team, 0, simulation.teamCount - 1, 0),
+      radius: clampNumber(unit.radius, 1, 40, UNIT_RADIUS),
+      health: clampInteger(unit.health, 0, 100, 0),
+      alive: unit.alive === true
+    }))
+    simulation.tick = clampInteger(
+      snapshot.tick,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      0
+    )
+    simulation.phase = ['turn', 'resolving', 'finished'].includes(
+      snapshot.phase
+    )
+      ? snapshot.phase
+      : 'turn'
+    simulation.turnNumber = clampInteger(
+      snapshot.turnNumber,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      1
+    )
+    simulation.activeTeam = clampInteger(
+      snapshot.activeTeam,
+      0,
+      simulation.teamCount - 1,
+      0
+    )
+    simulation.teamCursor = Array.from(
+      {length: simulation.teamCount},
+      (_, team) =>
+        clampInteger(
+          snapshot.teamCursor?.[team],
+          0,
+          simulation.charactersPerTeam,
+          0
+        )
+    )
+    simulation.activeUnitId =
+      typeof snapshot.activeUnitId === 'string'
+        ? snapshot.activeUnitId
+        : null
+    simulation.turnTime = clampNumber(
+      snapshot.turnTime,
+      0,
+      simulation.turnDuration,
+      simulation.turnDuration
+    )
+    simulation.selectedWeapon = WEAPONS[snapshot.selectedWeapon]
+      ? snapshot.selectedWeapon
+      : 'launcher'
+    simulation.power = clampNumber(snapshot.power, MIN_POWER, 1, MIN_POWER)
+    simulation.charging = snapshot.charging === true
+    simulation.controls = {
+      move: clampInteger(snapshot.controls?.move, -1, 1, 0),
+      aim: clampInteger(snapshot.controls?.aim, -1, 1, 0)
+    }
+    simulation.projectile = snapshot.projectile
+      ? {...snapshot.projectile}
+      : null
+    simulation.winner =
+      snapshot.winner === null
+        ? null
+        : clampInteger(
+            snapshot.winner,
+            0,
+            simulation.teamCount - 1,
+            null
+          )
+    simulation.resolutionElapsed = clampNumber(
+      snapshot.resolutionElapsed,
+      0,
+      30,
+      0
+    )
+    simulation.resolutionTimer = clampNumber(
+      snapshot.resolutionTimer,
+      -30,
+      30,
+      0
+    )
+    simulation.commandLog = []
+    simulation.events = []
+    return simulation
+  }
+
+  forfeitTeam(teamId) {
+    const team = clampInteger(teamId, 0, this.teamCount - 1, -1)
+    if (team < 0 || this.phase === 'finished') return false
+    let changed = false
+    for (const unit of this.units) {
+      if (unit.team !== team || !unit.alive) continue
+      this._eliminateUnit(unit, 'forfeit')
+      changed = true
+    }
+    if (!changed) return false
+    if (!this._finishIfWon() && this.activeTeam === team) this._advanceTurn()
+    return true
   }
 
   stateDigest() {
@@ -258,7 +432,7 @@ export class WormBitsSimulation {
 
   _createUnits() {
     const units = []
-    for (let team = 0; team < 2; team += 1) {
+    for (let team = 0; team < this.teamCount; team += 1) {
       for (let index = 0; index < this.charactersPerTeam; index += 1) {
         const x = SPAWN_X[team][index]
         let y = this.terrain.surfaceAt(x) - UNIT_RADIUS - 2
@@ -280,7 +454,7 @@ export class WormBitsSimulation {
           radius: UNIT_RADIUS,
           health: 100,
           alive: true,
-          facing: team === 0 ? 1 : -1,
+          facing: x < WORLD_WIDTH / 2 ? 1 : -1,
           aim: -38,
           grounded: true,
           fallDamageCooldown: 0
@@ -680,7 +854,10 @@ export class WormBitsSimulation {
   }
 
   _finishIfWon() {
-    const livingTeams = [0, 1].filter(team =>
+    const livingTeams = Array.from(
+      {length: this.teamCount},
+      (_, team) => team
+    ).filter(team =>
       this.units.some(unit => unit.team === team && unit.alive)
     )
     if (livingTeams.length > 1) return false
@@ -699,7 +876,18 @@ export class WormBitsSimulation {
 
   _advanceTurn() {
     if (this._finishIfWon()) return
-    const nextTeam = this.activeTeam === 0 ? 1 : 0
+    let nextTeam = null
+    for (let offset = 1; offset <= this.teamCount; offset += 1) {
+      const candidate = (this.activeTeam + offset) % this.teamCount
+      if (this.units.some(unit => unit.team === candidate && unit.alive)) {
+        nextTeam = candidate
+        break
+      }
+    }
+    if (nextTeam === null) {
+      this._finishIfWon()
+      return
+    }
     const candidates = this.units.filter(
       unit => unit.team === nextTeam && unit.alive
     )
@@ -746,6 +934,7 @@ export class ReplayDriver {
     this.simulation = new WormBitsSimulation({
       seed: replay.seed,
       teamNames: replay.teamNames,
+      teamCount: replay.teamCount,
       charactersPerTeam: replay.charactersPerTeam,
       turnDuration: replay.turnDuration
     })

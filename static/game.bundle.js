@@ -18,6 +18,18 @@ const TEAM_DEFINITIONS = Object.freeze([
     name: 'Cyan',
     color: '#35e7ff',
     accent: '#d7fbff'
+  }),
+  Object.freeze({
+    id: 2,
+    name: 'Lime',
+    color: '#8dff70',
+    accent: '#e5ffdd'
+  }),
+  Object.freeze({
+    id: 3,
+    name: 'Gold',
+    color: '#ffe45c',
+    accent: '#fff6bd'
   })
 ])
 
@@ -52,17 +64,21 @@ const TERRAIN_START = 42
 const TERRAIN_END = WORLD_WIDTH - 43
 const TERRAIN_BOTTOM = WATER_LEVEL + 24
 const SPAWN_X = Object.freeze([
-  Object.freeze([190, 445, 705]),
-  Object.freeze([1410, 1155, 895])
+  Object.freeze([160, 640, 1120]),
+  Object.freeze([1440, 960, 480]),
+  Object.freeze([320, 800, 1280]),
+  Object.freeze([560, 1040, 1360])
 ])
+const SNAPSHOT_VERSION = 1
 
 class WormBitsSimulation {
   constructor(options = {}) {
     this.seed = normalizeSeed(options.seed)
     this.turnDuration = clampNumber(options.turnDuration, 1, 300, TURN_DURATION)
     this.charactersPerTeam = clampInteger(options.charactersPerTeam, 1, 3, 3)
-    this.teamNames = TEAM_DEFINITIONS.map((team, index) =>
-      cleanName(options.teamNames?.[index], team.name)
+    this.teamCount = clampInteger(options.teamCount, 2, 4, 2)
+    this.teamNames = TEAM_DEFINITIONS.slice(0, this.teamCount).map(
+      (team, index) => cleanName(options.teamNames?.[index], team.name)
     )
     this.terrain = new Terrain(this.seed)
     this.units = this._createUnits()
@@ -70,7 +86,8 @@ class WormBitsSimulation {
     this.phase = 'turn'
     this.turnNumber = 1
     this.activeTeam = 0
-    this.teamCursor = [1, 0]
+    this.teamCursor = Array(this.teamCount).fill(0)
+    this.teamCursor[0] = 1
     this.activeUnitId = this.units.find(unit => unit.team === 0)?.id ?? null
     this.turnTime = this.turnDuration
     this.selectedWeapon = 'launcher'
@@ -206,6 +223,7 @@ class WormBitsSimulation {
       version: COMMAND_VERSION,
       seed: this.seed,
       teamNames: [...this.teamNames],
+      teamCount: this.teamCount,
       charactersPerTeam: this.charactersPerTeam,
       turnDuration: this.turnDuration,
       commands: this.commandLog.map(command => ({
@@ -217,6 +235,162 @@ class WormBitsSimulation {
         ...(command.weapon === undefined ? {} : {weapon: command.weapon})
       }))
     }
+  }
+
+  exportSnapshot() {
+    return {
+      version: SNAPSHOT_VERSION,
+      seed: this.seed,
+      teamNames: [...this.teamNames],
+      teamCount: this.teamCount,
+      charactersPerTeam: this.charactersPerTeam,
+      turnDuration: this.turnDuration,
+      tick: this.tick,
+      phase: this.phase,
+      turnNumber: this.turnNumber,
+      activeTeam: this.activeTeam,
+      teamCursor: [...this.teamCursor],
+      activeUnitId: this.activeUnitId,
+      turnTime: this.turnTime,
+      selectedWeapon: this.selectedWeapon,
+      power: this.power,
+      charging: this.charging,
+      controls: {...this.controls},
+      projectile: this.projectile ? {...this.projectile} : null,
+      winner: this.winner,
+      resolutionElapsed: this.resolutionElapsed,
+      resolutionTimer: this.resolutionTimer,
+      terrain: {
+        craters: this.terrain.craters.map(crater => ({...crater}))
+      },
+      units: this.units.map(unit => ({...unit}))
+    }
+  }
+
+  static fromSnapshot(snapshot) {
+    if (
+      !snapshot ||
+      snapshot.version !== SNAPSHOT_VERSION ||
+      !Array.isArray(snapshot.units) ||
+      !Array.isArray(snapshot.terrain?.craters)
+    ) {
+      throw new Error('Unsupported Worm Bits snapshot.')
+    }
+    const simulation = new WormBitsSimulation({
+      seed: snapshot.seed,
+      teamNames: snapshot.teamNames,
+      teamCount: snapshot.teamCount,
+      charactersPerTeam: snapshot.charactersPerTeam,
+      turnDuration: snapshot.turnDuration
+    })
+    simulation.terrain = new Terrain(simulation.seed)
+    for (const crater of snapshot.terrain.craters) {
+      simulation.terrain.carveCircle(
+        clampNumber(crater.x, -WORLD_WIDTH, WORLD_WIDTH * 2, 0),
+        clampNumber(crater.y, -WORLD_HEIGHT, WORLD_HEIGHT * 2, 0),
+        clampNumber(crater.radius, 1, 200, 1)
+      )
+    }
+    simulation.units = snapshot.units.map(unit => ({
+      ...unit,
+      team: clampInteger(unit.team, 0, simulation.teamCount - 1, 0),
+      radius: clampNumber(unit.radius, 1, 40, UNIT_RADIUS),
+      health: clampInteger(unit.health, 0, 100, 0),
+      alive: unit.alive === true
+    }))
+    simulation.tick = clampInteger(
+      snapshot.tick,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      0
+    )
+    simulation.phase = ['turn', 'resolving', 'finished'].includes(
+      snapshot.phase
+    )
+      ? snapshot.phase
+      : 'turn'
+    simulation.turnNumber = clampInteger(
+      snapshot.turnNumber,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      1
+    )
+    simulation.activeTeam = clampInteger(
+      snapshot.activeTeam,
+      0,
+      simulation.teamCount - 1,
+      0
+    )
+    simulation.teamCursor = Array.from(
+      {length: simulation.teamCount},
+      (_, team) =>
+        clampInteger(
+          snapshot.teamCursor?.[team],
+          0,
+          simulation.charactersPerTeam,
+          0
+        )
+    )
+    simulation.activeUnitId =
+      typeof snapshot.activeUnitId === 'string'
+        ? snapshot.activeUnitId
+        : null
+    simulation.turnTime = clampNumber(
+      snapshot.turnTime,
+      0,
+      simulation.turnDuration,
+      simulation.turnDuration
+    )
+    simulation.selectedWeapon = WEAPONS[snapshot.selectedWeapon]
+      ? snapshot.selectedWeapon
+      : 'launcher'
+    simulation.power = clampNumber(snapshot.power, MIN_POWER, 1, MIN_POWER)
+    simulation.charging = snapshot.charging === true
+    simulation.controls = {
+      move: clampInteger(snapshot.controls?.move, -1, 1, 0),
+      aim: clampInteger(snapshot.controls?.aim, -1, 1, 0)
+    }
+    simulation.projectile = snapshot.projectile
+      ? {...snapshot.projectile}
+      : null
+    simulation.winner =
+      snapshot.winner === null
+        ? null
+        : clampInteger(
+            snapshot.winner,
+            0,
+            simulation.teamCount - 1,
+            null
+          )
+    simulation.resolutionElapsed = clampNumber(
+      snapshot.resolutionElapsed,
+      0,
+      30,
+      0
+    )
+    simulation.resolutionTimer = clampNumber(
+      snapshot.resolutionTimer,
+      -30,
+      30,
+      0
+    )
+    simulation.commandLog = []
+    simulation.events = []
+    return simulation
+  }
+
+  forfeitTeam(teamId) {
+    const team = clampInteger(teamId, 0, this.teamCount - 1, -1)
+    if (team < 0 || this.phase === 'finished') return false
+    let changed = false
+    for (const unit of this.units) {
+      if (unit.team !== team || !unit.alive) continue
+      this._eliminateUnit(unit, 'forfeit')
+      changed = true
+    }
+    if (!changed) return false
+    if (!this._finishIfWon() && this.activeTeam === team) this._advanceTurn()
+    return true
   }
 
   stateDigest() {
@@ -260,7 +434,7 @@ class WormBitsSimulation {
 
   _createUnits() {
     const units = []
-    for (let team = 0; team < 2; team += 1) {
+    for (let team = 0; team < this.teamCount; team += 1) {
       for (let index = 0; index < this.charactersPerTeam; index += 1) {
         const x = SPAWN_X[team][index]
         let y = this.terrain.surfaceAt(x) - UNIT_RADIUS - 2
@@ -282,7 +456,7 @@ class WormBitsSimulation {
           radius: UNIT_RADIUS,
           health: 100,
           alive: true,
-          facing: team === 0 ? 1 : -1,
+          facing: x < WORLD_WIDTH / 2 ? 1 : -1,
           aim: -38,
           grounded: true,
           fallDamageCooldown: 0
@@ -682,7 +856,10 @@ class WormBitsSimulation {
   }
 
   _finishIfWon() {
-    const livingTeams = [0, 1].filter(team =>
+    const livingTeams = Array.from(
+      {length: this.teamCount},
+      (_, team) => team
+    ).filter(team =>
       this.units.some(unit => unit.team === team && unit.alive)
     )
     if (livingTeams.length > 1) return false
@@ -701,7 +878,18 @@ class WormBitsSimulation {
 
   _advanceTurn() {
     if (this._finishIfWon()) return
-    const nextTeam = this.activeTeam === 0 ? 1 : 0
+    let nextTeam = null
+    for (let offset = 1; offset <= this.teamCount; offset += 1) {
+      const candidate = (this.activeTeam + offset) % this.teamCount
+      if (this.units.some(unit => unit.team === candidate && unit.alive)) {
+        nextTeam = candidate
+        break
+      }
+    }
+    if (nextTeam === null) {
+      this._finishIfWon()
+      return
+    }
     const candidates = this.units.filter(
       unit => unit.team === nextTeam && unit.alive
     )
@@ -748,6 +936,7 @@ class ReplayDriver {
     this.simulation = new WormBitsSimulation({
       seed: replay.seed,
       teamNames: replay.teamNames,
+      teamCount: replay.teamCount,
       charactersPerTeam: replay.charactersPerTeam,
       turnDuration: replay.turnDuration
     })
@@ -1006,10 +1195,33 @@ const canvas = requiredElement('game-canvas')
 const context = canvas.getContext('2d', {alpha: false})
 const canvasWrap = requiredElement('canvas-wrap')
 const setupOverlay = requiredElement('setup-overlay')
+const lobbyOverlay = requiredElement('lobby-overlay')
 const handoffOverlay = requiredElement('handoff-overlay')
 const resultOverlay = requiredElement('result-overlay')
 const seedInput = requiredElement('seed-input')
 const startButton = requiredElement('start-button')
+const playerNameInput = requiredElement('player-name-input')
+const roomNameInput = requiredElement('room-name-input')
+const maxPlayersInput = requiredElement('max-players-input')
+const createRoomButton = requiredElement('create-room-button')
+const roomCodeInput = requiredElement('room-code-input')
+const openRoomButton = requiredElement('open-room-button')
+const onlineSetup = requiredElement('online-setup')
+const onlineUnavailable = requiredElement('online-unavailable')
+const lobbyConnection = requiredElement('lobby-connection')
+const lobbyTitle = requiredElement('lobby-title')
+const lobbySummary = requiredElement('lobby-summary')
+const lobbyRoomCode = requiredElement('lobby-room-code')
+const lobbyParticipants = requiredElement('lobby-participants')
+const lobbyJoinControls = requiredElement('lobby-join-controls')
+const lobbyPlayerControls = requiredElement('lobby-player-controls')
+const lobbyNameInput = requiredElement('lobby-name-input')
+const joinRoomButton = requiredElement('join-room-button')
+const spectateRoomButton = requiredElement('spectate-room-button')
+const lobbyReadyButton = requiredElement('lobby-ready-button')
+const lobbyStartButton = requiredElement('lobby-start-button')
+const copyInviteButton = requiredElement('copy-invite-button')
+const leaveRoomButton = requiredElement('leave-room-button')
 const restartButton = requiredElement('restart-button')
 const handoffButton = requiredElement('handoff-button')
 const replayButton = requiredElement('replay-button')
@@ -1033,12 +1245,16 @@ const weaponButtons = [...document.querySelectorAll('[data-weapon]')]
 const holdButtons = [...document.querySelectorAll('[data-hold]')]
 const actionButtons = [...document.querySelectorAll('[data-action]')]
 
-const TEAM_ELEMENTS = [0, 1].map(team => ({
-  card: requiredElement(`team-card-${team}`),
-  name: requiredElement(`team-name-${team}`),
-  health: requiredElement(`team-health-${team}`),
-  alive: requiredElement(`team-alive-${team}`)
+const TEAM_ELEMENTS = TEAM_DEFINITIONS.map(team => ({
+  card: requiredElement(`team-card-${team.id}`),
+  name: requiredElement(`team-name-${team.id}`),
+  health: requiredElement(`team-health-${team.id}`),
+  alive: requiredElement(`team-alive-${team.id}`)
 }))
+
+for (const team of TEAM_DEFINITIONS) {
+  TEAM_ELEMENTS[team.id].card.style.setProperty('--team-color', team.color)
+}
 
 const terrainCanvas = document.createElement('canvas')
 terrainCanvas.width = WORLD_WIDTH
@@ -1060,14 +1276,68 @@ let renderedTerrain = null
 let accumulator = 0
 let previousFrame = performance.now()
 let announcementTimer = null
+const multiplayerClient = window.createWormbitsClient?.() ?? null
+const online = {
+  available: false,
+  context: null,
+  room: null,
+  participants: [],
+  viewer: null,
+  token: '',
+  revision: 0,
+  websocket: null,
+  pollTimer: null,
+  heartbeatTimer: null,
+  refreshTimer: null,
+  requestQueue: Promise.resolve(),
+  clientSeq: 0,
+  applying: false
+}
 
 startButton.addEventListener('click', () => {
   audio.unlock()
   startMatch(seedInput.value)
 })
 
-restartButton.addEventListener('click', () => {
-  openSetup()
+createRoomButton.addEventListener('click', () => {
+  runOnlineUiAction(createOnlineRoom)
+})
+
+openRoomButton.addEventListener('click', () => {
+  runOnlineUiAction(() => enterOnlineRoom(roomCodeInput.value))
+})
+
+joinRoomButton.addEventListener('click', () => {
+  runOnlineUiAction(joinOnlineRoom)
+})
+
+spectateRoomButton.addEventListener('click', () => {
+  runOnlineUiAction(spectateOnlineRoom)
+})
+
+lobbyReadyButton.addEventListener('click', () => {
+  runOnlineUiAction(toggleOnlineReady)
+})
+
+lobbyStartButton.addEventListener('click', () => {
+  runOnlineUiAction(startOnlineMatch)
+})
+
+copyInviteButton.addEventListener('click', () => {
+  runOnlineUiAction(copyOnlineInvite)
+})
+
+leaveRoomButton.addEventListener('click', () => {
+  leaveOnlineRoom()
+})
+
+restartButton.addEventListener('click', async () => {
+  if (mode === 'online' && online.viewer?.role === 'player') {
+    await runOnlineUiAction(forfeitOnlineMatch)
+    return
+  }
+  if (online.room) leaveOnlineRoom()
+  else openSetup()
 })
 
 handoffButton.addEventListener('click', () => {
@@ -1083,6 +1353,10 @@ replayButton.addEventListener('click', () => {
 })
 
 rematchButton.addEventListener('click', () => {
+  if (mode === 'online') {
+    leaveOnlineRoom()
+    return
+  }
   const newSeed = `wormbits-${Date.now().toString(36)}`
   seedInput.value = newSeed
   startMatch(newSeed)
@@ -1152,6 +1426,7 @@ window.addEventListener('keyup', event => {
 })
 
 window.addEventListener('blur', releaseAllControls)
+window.addEventListener('beforeunload', stopOnlineRealtime)
 window.addEventListener('resize', resizeCanvas)
 new ResizeObserver(resizeCanvas).observe(canvasWrap)
 
@@ -1167,7 +1442,19 @@ window.wormbitsDebug = Object.freeze({
     activeUnitId: simulation.activeUnitId,
     terrainDigest: simulation.terrain.digest(),
     commandCount: simulation.commandLog.length,
-    teams: [simulation.teamSummary(0), simulation.teamSummary(1)]
+    teams: Array.from({length: simulation.teamCount}, (_, team) =>
+      simulation.teamSummary(team)
+    ),
+    roomId: online.room?.id ?? null,
+    roomStatus: online.room?.status ?? null,
+    revision: online.revision,
+    viewer: online.viewer
+      ? {
+          role: online.viewer.role,
+          slot: online.viewer.slot,
+          connected: online.viewer.connected
+        }
+      : null
   })
 })
 
@@ -1175,6 +1462,7 @@ resizeCanvas()
 rebuildTerrain()
 updateInterface()
 requestAnimationFrame(frame)
+initializeMultiplayer().catch(showOnlineError)
 
 function startMatch(seed) {
   releaseAllControls()
@@ -1186,6 +1474,7 @@ function startMatch(seed) {
   lastReplay = null
   effects.length = 0
   setupOverlay.hidden = true
+  lobbyOverlay.hidden = true
   handoffOverlay.hidden = true
   resultOverlay.hidden = true
   camera.x = simulation.activeUnit()?.x ?? WORLD_WIDTH / 2
@@ -1207,6 +1496,7 @@ function startReplay(replay) {
   paused = false
   effects.length = 0
   setupOverlay.hidden = true
+  lobbyOverlay.hidden = true
   handoffOverlay.hidden = true
   resultOverlay.hidden = true
   camera.x = simulation.activeUnit()?.x ?? WORLD_WIDTH / 2
@@ -1228,6 +1518,7 @@ function openSetup() {
   paused = true
   effects.length = 0
   setupOverlay.hidden = false
+  lobbyOverlay.hidden = true
   handoffOverlay.hidden = true
   resultOverlay.hidden = true
   renderedTerrain = null
@@ -1261,20 +1552,31 @@ function frame(now) {
 
 function sendCommand(command) {
   if (!canControl()) return false
+  const tick = simulation.tick
   const accepted = simulation.dispatch(command)
   if (accepted) {
     handleSimulationEvents()
     updateInterface()
+    if (mode === 'online') queueOnlineCommand(command, tick)
   }
   return accepted
 }
 
 function canControl() {
+  if (
+    paused ||
+    simulation.phase !== 'turn' ||
+    simulation.activeUnit()?.alive !== true
+  ) {
+    return false
+  }
+  if (mode === 'live') return true
+  if (mode !== 'online') return false
   return (
-    mode === 'live' &&
-    !paused &&
-    simulation.phase === 'turn' &&
-    simulation.activeUnit()?.alive === true
+    online.room?.status === 'active' &&
+    online.viewer?.role === 'player' &&
+    online.viewer.forfeited !== true &&
+    online.viewer.slot === simulation.activeTeam
   )
 }
 
@@ -1318,9 +1620,9 @@ function releaseAllControls() {
   pressedKeys.clear()
   for (const button of holdButtons) button.classList.remove('is-held')
   if (canControl()) {
-    simulation.dispatch({type: 'move', direction: 0})
-    simulation.dispatch({type: 'aim', direction: 0})
-    if (shouldFire) simulation.dispatch({type: 'fire'})
+    sendCommand({type: 'move', direction: 0})
+    sendCommand({type: 'aim', direction: 0})
+    if (shouldFire) sendCommand({type: 'fire'})
   }
 }
 
@@ -1442,7 +1744,9 @@ function updateCamera(dt) {
 }
 
 function updateInterface() {
-  for (let team = 0; team < 2; team += 1) {
+  for (let team = 0; team < TEAM_DEFINITIONS.length; team += 1) {
+    TEAM_ELEMENTS[team].card.hidden = team >= simulation.teamCount
+    if (team >= simulation.teamCount) continue
     const summary = simulation.teamSummary(team)
     const elements = TEAM_ELEMENTS[team]
     elements.name.textContent = summary.name
@@ -1464,6 +1768,11 @@ function updateInterface() {
       simulation.phase === 'finished'
         ? 'Replay complete'
         : `${simulation.teamNames[simulation.activeTeam]} · ${active?.name ?? ''}`
+  } else if (mode === 'online-lobby') {
+    turnLabel.textContent = 'Multiplayer lobby'
+    activeUnitLabel.textContent = online.room
+      ? `${online.room.playerCount} / ${online.room.maxPlayers} players`
+      : 'Connecting'
   } else {
     turnLabel.textContent =
       simulation.phase === 'resolving'
@@ -1472,7 +1781,12 @@ function updateInterface() {
     activeUnitLabel.textContent =
       simulation.phase === 'finished'
         ? 'Match complete'
-        : `${simulation.teamNames[simulation.activeTeam]} · ${active?.name ?? ''}`
+        : `${simulation.teamNames[simulation.activeTeam]} · ${active?.name ?? ''}${
+            mode === 'online' &&
+            online.viewer?.slot !== simulation.activeTeam
+              ? ' · waiting'
+              : ''
+          }`
   }
 
   turnTimer.textContent = simulation.turnTime.toFixed(1)
@@ -1487,7 +1801,15 @@ function updateInterface() {
   modeLabel.textContent =
     mode === 'replay'
       ? 'Replaying deterministic command log'
-      : 'Phase 1 · deterministic local play'
+      : mode === 'online' || mode === 'online-lobby'
+        ? `Online · ${
+            online.websocket?.active ? 'WebSocket connected' : 'polling recovery'
+          } · revision ${online.revision}`
+        : 'Local · deterministic hot-seat play'
+  restartButton.textContent =
+    mode === 'online' && online.viewer?.role === 'player'
+      ? 'Forfeit'
+      : 'New match'
 
   for (const button of weaponButtons) {
     const selected = button.dataset.weapon === simulation.selectedWeapon
@@ -2061,6 +2383,487 @@ function drawWater() {
     else context.lineTo(x, y)
   }
   context.stroke()
+}
+
+async function initializeMultiplayer() {
+  if (!multiplayerClient) {
+    disableOnlineSetup()
+    return
+  }
+  try {
+    online.context = await multiplayerClient.context()
+    online.available = true
+    onlineUnavailable.hidden = true
+    const roomId = online.context?.routeParams?.roomId
+    if (roomId) await enterOnlineRoom(roomId)
+  } catch (error) {
+    if (
+      String(error?.message || error).includes(
+        'extension bridge is not available'
+      )
+    ) {
+      disableOnlineSetup()
+      return
+    }
+    throw error
+  }
+}
+
+function disableOnlineSetup() {
+  online.available = false
+  onlineUnavailable.hidden = false
+  for (const control of onlineSetup.querySelectorAll('button, input, select')) {
+    control.disabled = true
+  }
+}
+
+async function createOnlineRoom() {
+  requireOnline()
+  const response = await multiplayerClient.createRoom({
+    name: roomNameInput.value,
+    playerName: playerNameInput.value,
+    maxPlayers: Number(maxPlayersInput.value),
+    seed: seedInput.value
+  })
+  await saveOnlineToken(response.room.id, response.viewer.token)
+  applyOnlineView(response, {forceSnapshot: true})
+  startOnlineRealtime()
+  announce('Multiplayer lobby created')
+}
+
+async function enterOnlineRoom(value) {
+  requireOnline()
+  const roomId = normalizeRoomId(value)
+  if (!roomId) throw new Error('Enter a valid Worm Bits room code.')
+  stopOnlineRealtime()
+  const token = (await readOnlineToken(roomId)) || ''
+  let response = await multiplayerClient.getRoom(roomId, token)
+  if (token && !response.viewer) {
+    await saveOnlineToken(roomId, '')
+    response = await multiplayerClient.getRoom(roomId)
+  }
+  applyOnlineView(response, {forceSnapshot: true})
+  startOnlineRealtime()
+  if (response.viewer && !response.viewer.forfeited) {
+    queueOnlineHeartbeat()
+  }
+}
+
+async function joinOnlineRoom() {
+  requireRoom()
+  if (online.room.status !== 'waiting') {
+    throw new Error('This match has already started. Join as a spectator.')
+  }
+  const response = await multiplayerClient.joinRoom(online.room.id, {
+    playerName: lobbyNameInput.value
+  })
+  await saveOnlineToken(online.room.id, response.viewer.token)
+  applyOnlineView(response, {forceSnapshot: true})
+  announce('Joined the lobby')
+}
+
+async function spectateOnlineRoom() {
+  requireRoom()
+  const response = await multiplayerClient.spectateRoom(online.room.id, {
+    playerName: lobbyNameInput.value
+  })
+  await saveOnlineToken(online.room.id, response.viewer.token)
+  applyOnlineView(response, {forceSnapshot: true})
+  announce('Spectator mode enabled')
+}
+
+async function toggleOnlineReady() {
+  requireOnlinePlayer()
+  const response = await multiplayerClient.setReady(online.room.id, {
+    playerToken: online.token,
+    ready: !online.viewer.ready
+  })
+  applyOnlineView(response)
+}
+
+async function startOnlineMatch() {
+  requireOnlinePlayer()
+  const response = await multiplayerClient.startMatch(online.room.id, {
+    playerToken: online.token
+  })
+  applyOnlineView(response, {forceSnapshot: true})
+  announce('Match started')
+}
+
+async function forfeitOnlineMatch() {
+  requireOnlinePlayer()
+  const response = await multiplayerClient.forfeit(online.room.id, {
+    playerToken: online.token
+  })
+  applyOnlineView(response, {forceSnapshot: true})
+  announce('Your team forfeited')
+}
+
+async function copyOnlineInvite() {
+  requireRoom()
+  const invite = new URL(
+    `/ext/wormbits/rooms/${encodeURIComponent(online.room.id)}`,
+    window.location.href
+  ).toString()
+  await navigator.clipboard.writeText(invite)
+  announce('Invite copied')
+}
+
+function queueOnlineCommand(command, tick) {
+  const sequence = ++online.clientSeq
+  enqueueOnlineRequest(async () => {
+    try {
+      const response = await multiplayerClient.submitAction(online.room.id, {
+        playerToken: online.token,
+        expectedRevision: online.revision,
+        clientSeq: sequence,
+        tick,
+        command
+      })
+      applyOnlineView(response, {applySnapshot: false})
+    } catch (error) {
+      showOnlineError(error)
+      await refreshOnlineRoom(true)
+    }
+  })
+}
+
+function queueOnlineHeartbeat() {
+  if (!online.room || !online.viewer || online.viewer.forfeited) return
+  enqueueOnlineRequest(async () => {
+    try {
+      const viewerWasActive =
+        mode === 'online' &&
+        online.viewer?.slot === simulation.activeTeam &&
+        online.viewer?.role === 'player'
+      const response = await multiplayerClient.heartbeat(online.room.id, {
+        playerToken: online.token,
+        tick: mode === 'online' ? simulation.tick : 0
+      })
+      applyOnlineView(response, {applySnapshot: !viewerWasActive})
+    } catch (error) {
+      showOnlineError(error)
+      await refreshOnlineRoom(true)
+    }
+  })
+}
+
+function enqueueOnlineRequest(operation) {
+  online.requestQueue = online.requestQueue.then(operation, operation)
+  return online.requestQueue
+}
+
+async function refreshOnlineRoom(forceSnapshot = false) {
+  if (!online.room || online.applying) return
+  online.applying = true
+  try {
+    const response = await multiplayerClient.getRoom(
+      online.room.id,
+      online.token
+    )
+    applyOnlineView(response, {forceSnapshot})
+    await ensureOnlineWebsocket()
+  } finally {
+    online.applying = false
+  }
+}
+
+function applyOnlineView(
+  response,
+  {forceSnapshot = false, applySnapshot = true} = {}
+) {
+  if (!response?.room) throw new Error('Worm Bits room response is invalid.')
+  const responseRevision = Number(response.room.revision || 0)
+  if (
+    online.room?.id === response.room.id &&
+    responseRevision < online.revision
+  ) {
+    return
+  }
+  const previousRevision = online.revision
+  online.room = response.room
+  online.participants = response.participants || []
+  online.viewer = response.viewer || null
+  online.token = online.viewer?.token || online.token || ''
+  online.revision = responseRevision
+  online.clientSeq = Math.max(
+    online.clientSeq,
+    Number(online.viewer?.lastClientSeq || 0)
+  )
+  roomCodeInput.value = response.room.id
+  lobbyNameInput.value =
+    online.viewer?.name || playerNameInput.value || 'Anonymous Bit'
+
+  const shouldRestore =
+    response.snapshot &&
+    applySnapshot &&
+    (forceSnapshot ||
+      mode !== 'online' ||
+      online.revision > previousRevision)
+
+  if (shouldRestore) {
+    restoreOnlineSnapshot(
+      response.snapshot,
+      response.serverTime,
+      response.room.startedAt
+    )
+  }
+
+  if (response.room.status !== 'waiting' && !online.viewer) {
+    mode = 'online-lobby'
+    paused = true
+    setupOverlay.hidden = true
+    lobbyOverlay.hidden = false
+    handoffOverlay.hidden = true
+    resultOverlay.hidden = true
+  } else if (response.room.status === 'waiting') {
+    mode = 'online-lobby'
+    paused = true
+    setupOverlay.hidden = true
+    lobbyOverlay.hidden = false
+    handoffOverlay.hidden = true
+    resultOverlay.hidden = true
+    if (simulation.seed !== response.room.seed || simulation.teamCount !== 2) {
+      simulation = new WormBitsSimulation({seed: response.room.seed})
+      simulation.consumeEvents()
+      renderedTerrain = null
+      terrainRevision = -1
+    }
+  } else if (response.snapshot) {
+    mode = 'online'
+    paused = response.room.status === 'completed'
+    setupOverlay.hidden = true
+    lobbyOverlay.hidden = true
+    handoffOverlay.hidden = true
+    if (response.room.status === 'completed') {
+      const winner =
+        response.room.winnerSlot >= 0
+          ? {
+              team: response.room.winnerSlot,
+              teamName:
+                simulation.teamNames[response.room.winnerSlot] || 'A team'
+            }
+          : {team: null, teamName: 'No team'}
+      finishMatch(winner)
+    } else {
+      resultOverlay.hidden = true
+    }
+  }
+  renderOnlineLobby()
+  updateInterface()
+}
+
+function restoreOnlineSnapshot(snapshot, serverTime = 0, startedAt = 0) {
+  paused = true
+  releaseAllControls()
+  simulation = WormBitsSimulation.fromSnapshot(snapshot)
+  if (serverTime > 0 && startedAt > 0 && simulation.phase !== 'finished') {
+    const clientClockOffset = Date.now() / 1000 - serverTime
+    const elapsed = Math.max(0, serverTime + clientClockOffset - startedAt)
+    const targetTick = Math.min(
+      simulation.tick + 600,
+      Math.max(simulation.tick, Math.floor(elapsed / FIXED_STEP))
+    )
+    while (simulation.tick < targetTick && simulation.phase !== 'finished') {
+      simulation.update(FIXED_STEP)
+    }
+  }
+  simulation.consumeEvents()
+  replayDriver = null
+  lastReplay = null
+  effects.length = 0
+  renderedTerrain = null
+  terrainRevision = -1
+  accumulator = 0
+  camera.x = simulation.activeUnit()?.x ?? WORLD_WIDTH / 2
+  camera.shake = 0
+}
+
+function renderOnlineLobby() {
+  if (!online.room) return
+  lobbyConnection.textContent = online.viewer
+    ? online.viewer.connected
+      ? 'Connected'
+      : 'Reconnecting'
+    : 'Spectator access'
+  lobbyTitle.textContent = online.room.name
+  lobbyRoomCode.textContent = online.room.id
+  const players = online.participants.filter(
+    participant => participant.role === 'player' && !participant.forfeited
+  )
+  const readyPlayers = players.filter(participant => participant.ready)
+  lobbySummary.textContent =
+    online.room.status === 'waiting'
+      ? `${players.length} / ${online.room.maxPlayers} players · ${readyPlayers.length} ready`
+      : `${players.length} players · ${online.room.spectatorCount} watching`
+  lobbyParticipants.replaceChildren(
+    ...online.participants.map(participant => {
+      const row = document.createElement('div')
+      row.className = `lobby-participant${
+        participant.connected ? '' : ' is-disconnected'
+      }`
+      const color = document.createElement('span')
+      color.className = 'lobby-participant__color'
+      color.style.setProperty(
+        '--participant-color',
+        participant.role === 'player'
+          ? TEAM_DEFINITIONS[participant.slot]?.color || '#817b88'
+          : '#817b88'
+      )
+      const identity = document.createElement('span')
+      const name = document.createElement('strong')
+      name.textContent = participant.name
+      const role = document.createElement('small')
+      role.textContent =
+        participant.role === 'spectator'
+          ? 'Spectator'
+          : `Team ${participant.slot + 1}${participant.host ? ' · host' : ''}`
+      identity.append(name, role)
+      const state = document.createElement('span')
+      state.className = 'lobby-participant__state'
+      state.textContent = participant.forfeited
+        ? 'Forfeited'
+        : !participant.connected
+          ? 'Offline'
+          : participant.role === 'spectator'
+            ? 'Watching'
+            : participant.ready
+              ? 'Ready'
+              : 'Not ready'
+      row.append(color, identity, state)
+      return row
+    })
+  )
+
+  lobbyJoinControls.hidden = !!online.viewer && !online.viewer.forfeited
+  joinRoomButton.hidden = online.room.status !== 'waiting'
+  lobbyPlayerControls.hidden =
+    !online.viewer ||
+    online.viewer.role !== 'player' ||
+    online.viewer.forfeited
+  lobbyReadyButton.hidden = online.room.status !== 'waiting'
+  lobbyReadyButton.textContent = online.viewer?.ready
+    ? 'Cancel ready'
+    : 'Ready up'
+  const host = online.viewer?.host === true
+  lobbyStartButton.hidden = online.room.status !== 'waiting' || !host
+  lobbyStartButton.disabled =
+    players.length < 2 || players.some(player => !player.ready)
+}
+
+function startOnlineRealtime() {
+  stopOnlineRealtime()
+  ensureOnlineWebsocket().catch(showOnlineError)
+  online.pollTimer = window.setInterval(() => {
+    refreshOnlineRoom().catch(showOnlineError)
+  }, 3000)
+  online.heartbeatTimer = window.setInterval(queueOnlineHeartbeat, 2000)
+}
+
+async function ensureOnlineWebsocket() {
+  if (!online.room || online.websocket?.active) return
+  try {
+    online.websocket = await multiplayerClient.subscribeWebsocket(
+      `room:${online.room.id}`,
+      event => {
+        if (event.event === 'websocket.error') {
+          online.websocket = null
+          return
+        }
+        window.clearTimeout(online.refreshTimer)
+        online.refreshTimer = window.setTimeout(() => {
+          refreshOnlineRoom().catch(showOnlineError)
+        }, 40)
+      }
+    )
+  } catch (error) {
+    online.websocket = null
+    showOnlineError(error)
+  }
+}
+
+function stopOnlineRealtime() {
+  online.websocket?.unsubscribe?.()
+  online.websocket = null
+  window.clearInterval(online.pollTimer)
+  window.clearInterval(online.heartbeatTimer)
+  window.clearTimeout(online.refreshTimer)
+  online.pollTimer = null
+  online.heartbeatTimer = null
+  online.refreshTimer = null
+}
+
+function leaveOnlineRoom() {
+  stopOnlineRealtime()
+  paused = true
+  releaseAllControls()
+  online.room = null
+  online.participants = []
+  online.viewer = null
+  online.token = ''
+  online.revision = 0
+  online.clientSeq = 0
+  online.requestQueue = Promise.resolve()
+  openSetup()
+}
+
+async function saveOnlineToken(roomId, token) {
+  online.token = token
+  if (!multiplayerClient) return
+  await multiplayerClient.sessionSet(`room.${roomId}.token`, token)
+}
+
+async function readOnlineToken(roomId) {
+  if (!multiplayerClient) return ''
+  return (await multiplayerClient.sessionGet(`room.${roomId}.token`)) || ''
+}
+
+function normalizeRoomId(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  try {
+    const url = new URL(raw)
+    return (
+      url.pathname
+        .split('/')
+        .filter(Boolean)
+        .at(-1)
+        ?.replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, 128) || ''
+    )
+  } catch (_error) {
+    return raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128)
+  }
+}
+
+function requireOnline() {
+  if (!online.available || !multiplayerClient) {
+    throw new Error('Multiplayer is only available inside LNbits.')
+  }
+}
+
+function requireRoom() {
+  requireOnline()
+  if (!online.room) throw new Error('Open a Worm Bits room first.')
+}
+
+function requireOnlinePlayer() {
+  requireRoom()
+  if (online.viewer?.role !== 'player' || !online.token) {
+    throw new Error('Join this room as a player first.')
+  }
+}
+
+function runOnlineUiAction(operation) {
+  return Promise.resolve()
+    .then(operation)
+    .catch(showOnlineError)
+}
+
+function showOnlineError(error) {
+  const message = String(error?.message || error || 'Multiplayer error.')
+  console.warn('[wormbits multiplayer]', message)
+  announce(message)
 }
 
 function announce(message) {

@@ -122,6 +122,44 @@ test('recorded commands replay to the same deterministic state', () => {
   assert.equal(driver.simulation.stateDigest(), live.stateDigest())
 })
 
+test('three and four player matches rotate across every living team', () => {
+  const simulation = new WormBitsSimulation({
+    seed: 'four-teams',
+    teamCount: 4,
+    teamNames: ['One', 'Two', 'Three', 'Four']
+  })
+
+  assert.equal(simulation.units.length, 12)
+  assert.equal(simulation.teamCount, 4)
+  assert.deepEqual(simulation.teamNames, ['One', 'Two', 'Three', 'Four'])
+  assert.equal(simulation.dispatch({type: 'skip'}), true)
+  assert.equal(simulation.activeTeam, 1)
+  assert.equal(simulation.dispatch({type: 'skip'}), true)
+  assert.equal(simulation.activeTeam, 2)
+  assert.equal(simulation.dispatch({type: 'skip'}), true)
+  assert.equal(simulation.activeTeam, 3)
+  assert.equal(simulation.dispatch({type: 'skip'}), true)
+  assert.equal(simulation.activeTeam, 0)
+})
+
+test('durable snapshots restore exact state and forfeits remove one team', () => {
+  const live = new WormBitsSimulation({
+    seed: 'snapshot-test',
+    teamCount: 3
+  })
+  live.dispatch({type: 'move', direction: 1})
+  updateTicks(live, 40)
+  live.dispatch({type: 'move', direction: 0})
+  live.dispatch({type: 'chargeStart'})
+  updateTicks(live, 15)
+
+  const restored = WormBitsSimulation.fromSnapshot(live.exportSnapshot())
+  assert.equal(restored.stateDigest(), live.stateDigest())
+  assert.equal(restored.forfeitTeam(1), true)
+  assert.equal(restored.teamSummary(1).alive, 0)
+  assert.equal(restored.phase, 'turn')
+})
+
 function updateTicks(simulation, count) {
   for (let tick = 0; tick < count; tick += 1) {
     simulation.update(FIXED_STEP)
